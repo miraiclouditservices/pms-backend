@@ -13,10 +13,10 @@ const LeaseSchema = new mongoose.Schema({
         type: String,
         match: [/^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/, 'Please add a valid email']
     },
-    owner: {
+    property: {
         type: mongoose.Schema.ObjectId,
-        ref: 'Owner',
-        required: [true, 'Please link the property owner']
+        ref: 'Property',
+        required: [true, 'Please link the property']
     },
     units: [{
         type: mongoose.Schema.ObjectId,
@@ -58,6 +58,10 @@ const LeaseSchema = new mongoose.Schema({
         type: String,
         enum: ['Active', 'Expired', 'Terminated', 'Pending'],
         default: 'Active'
+    },
+    allocatedSft: {
+        type: Number,
+        default: 0
     },
     agreementUrl: {
         type: String

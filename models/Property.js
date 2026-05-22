@@ -42,6 +42,22 @@ const PropertySchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    totalSft: {
+        type: Number,
+        default: 0
+    },
+    occupiedSft: {
+        type: Number,
+        default: 0
+    },
+    availableSft: {
+        type: Number,
+        default: 0
+    },
+    occupancyPercentage: {
+        type: Number,
+        default: 0
+    },
     createdAt: {
         type: Date,
         default: Date.now

@@ -141,3 +141,50 @@ exports.deleteProperty = async (req, res, next) => {
         res.status(400).json({ success: false, error: err.message });
     }
 };
+
+// @desc    Get property structure (floors and units)
+// @route   GET /api/properties/:id/floors-units
+// @access  Private
+exports.getPropertyStructure = async (req, res, next) => {
+    try {
+        const property = await Property.findById(req.params.id);
+
+        if (!property) {
+            return res.status(404).json({ success: false, error: 'Property not found' });
+        }
+
+        const units = await Unit.find({ property: property._id }).sort({ floorNumber: 1, unitNumber: 1 });
+
+        const floorsMap = {};
+        units.forEach(unit => {
+            const floorName = unit.floorNumber ? `Floor ${unit.floorNumber}` : 'Main Block';
+            if (!floorsMap[floorName]) {
+                floorsMap[floorName] = {
+                    floorName,
+                    units: []
+                };
+            }
+            floorsMap[floorName].units.push({
+                unitId: unit._id,
+                unitName: unit.unitNumber,
+                sft: unit.sqft || 0,
+                status: unit.unitStatus
+            });
+        });
+
+        const structure = {
+            propertyName: property.propertyName,
+            totalSft: property.totalSft || 0,
+            occupiedSft: property.occupiedSft || 0,
+            availableSft: property.availableSft || 0,
+            floors: Object.values(floorsMap)
+        };
+
+        res.status(200).json({
+            success: true,
+            data: structure
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+};

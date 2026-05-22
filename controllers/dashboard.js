@@ -156,7 +156,23 @@ exports.getMetrics = async (req, res, next) => {
         
         const upcomingBookings = await Booking.countDocuments({ date: { $gte: new Date() } });
         
-        const revenueSummary = 0; 
+        // Financial & SFT calculations
+        const properties = await Property.find();
+        const totalPropertySft = properties.reduce((sum, p) => sum + (p.totalSft || 0), 0);
+        const occupiedSft = properties.reduce((sum, p) => sum + (p.occupiedSft || 0), 0);
+        const availableSft = properties.reduce((sum, p) => sum + (p.availableSft || 0), 0);
+
+        const allLeases = await Lease.find({ status: 'Active' });
+        const revenueSummary = allLeases.reduce((sum, l) => sum + (l.monthlyRent || 0), 0);
+        const camRevenue = allLeases.reduce((sum, l) => sum + (l.maintenanceCharges || 0), 0);
+        const depositAmount = allLeases.reduce((sum, l) => sum + (l.securityDeposit || 0), 0);
+
+        const tenantMap = new Map();
+        allLeases.forEach(l => {
+            const current = tenantMap.get(l.tenantName) || 0;
+            tenantMap.set(l.tenantName, current + (l.allocatedSft || 0));
+        });
+        const tenantAllocations = Array.from(tenantMap, ([tenantName, allocatedSft]) => ({ tenantName, allocatedSft }));
 
         // Get recent complaints
         const recentComplaints = await Helpdesk.find({ status: { $in: ['Open', 'In Progress'] } })
@@ -176,8 +192,14 @@ exports.getMetrics = async (req, res, next) => {
                     visitorsToday,
                     amcExpiryAlerts,
                     upcomingBookings,
-                    revenueSummary
+                    revenueSummary,
+                    totalPropertySft,
+                    occupiedSft,
+                    availableSft,
+                    camRevenue,
+                    depositAmount
                 },
+                tenantAllocations,
                 recentComplaints: recentComplaints.map(c => ({
                     id: c._id.toString(),
                     ticketNumber: c.ticketNumber,

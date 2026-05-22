@@ -4,7 +4,8 @@ const {
     getProperty,
     createProperty,
     updateProperty,
-    deleteProperty
+    deleteProperty,
+    getPropertyStructure
 } = require('../controllers/properties');
 
 const router = express.Router();
@@ -23,5 +24,8 @@ router
     .get(getProperty)
     .put(authorize('Admin'), updateProperty)
     .delete(authorize('Admin'), deleteProperty);
+
+router.route('/:id/floors-units')
+    .get(getPropertyStructure);
 
 module.exports = router;
