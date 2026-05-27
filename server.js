@@ -8,7 +8,16 @@ const connectDB = require('./config/db');
 dotenv.config();
 
 // Connect to database
-connectDB();
+connectDB().then(() => {
+    try {
+        const { runLeaseAutomation } = require('./config/leaseAutomation');
+        // Run once on boot, then every 24 hours
+        runLeaseAutomation();
+        setInterval(runLeaseAutomation, 24 * 60 * 60 * 1000);
+    } catch (e) {
+        console.error('Lease automation startup error:', e);
+    }
+});
 
 const app = express();
 
@@ -26,9 +35,13 @@ if (process.env.NODE_ENV === 'development') {
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/properties', require('./routes/properties'));
+app.use('/api/floors', require('./routes/floors'));
 app.use('/api/units', require('./routes/units'));
 app.use('/api/owners', require('./routes/owners'));
+app.use('/api/tenants', require('./routes/tenants'));
 app.use('/api/leases', require('./routes/leases'));
+app.use('/api/finance', require('./routes/finance'));
+app.use('/api/payments', require('./routes/payments'));
 app.use('/api/assets', require('./routes/assets'));
 app.use('/api/amc', require('./routes/amc'));
 app.use('/api/vendors', require('./routes/vendors'));
@@ -36,9 +49,10 @@ app.use('/api/visitors', require('./routes/visitors'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/helpdesk', require('./routes/helpdesk'));
 app.use('/api/bookings', require('./routes/bookings'));
+app.use('/api/floor-assignments', require('./routes/floorAssignments'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/dashboard', require('./routes/dashboard'));
-app.use('/api/payments', require('./routes/payments'));
 
 app.get('/', (req, res) => {
     res.send('API is running...');

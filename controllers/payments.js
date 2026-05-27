@@ -3,7 +3,56 @@ const Lease = require('../models/Lease');
 
 exports.getPayments = async (req, res, next) => {
     try {
-        const query = req.query.lease ? { lease: req.query.lease } : {};
+        let query = {};
+        
+        if (req.user) {
+            if (req.user.role === 'Tenant') {
+                const tenant = await require('mongoose').model('Tenant').findOne({ user: req.user._id });
+                if (!tenant) return res.status(200).json({ success: true, data: [] });
+                query.lease = tenant.lease;
+            } else if (req.user.role === 'Floor Admin') {
+                const Floor = require('../models/Floor');
+                const Lease = require('../models/Lease');
+                const floors = await Floor.find({ assignedAdmin: req.user._id });
+                const fIds = floors.map(f => f._id);
+                const leases = await Lease.find({ floor: { $in: fIds } });
+                const leaseIds = leases.map(l => l._id);
+                query.lease = { $in: leaseIds };
+            } else if (req.user.role === 'Owner' || req.user.role === 'Office Owner') {
+                const Floor = require('../models/Floor');
+                const Lease = require('../models/Lease');
+                const Owner = require('../models/Owner');
+                const owner = await Owner.findOne({ user: req.user._id });
+                if (owner) {
+                    const floors = await Floor.find({ assignedOwner: owner._id });
+                    const fIds = floors.map(f => f._id);
+                    const leases = await Lease.find({ floor: { $in: fIds } });
+                    const leaseIds = leases.map(l => l._id);
+                    query.lease = { $in: leaseIds };
+                } else {
+                    query.lease = { $in: [] };
+                }
+            }
+        }
+
+        if (req.query.lease) {
+            if (query.lease) {
+                if (query.lease.$in && Array.isArray(query.lease.$in)) {
+                    if (query.lease.$in.map(id => id.toString()).includes(req.query.lease.toString())) {
+                        query.lease = req.query.lease;
+                    } else {
+                        query.lease = null; // No access
+                    }
+                } else if (query.lease.toString() === req.query.lease.toString()) {
+                    query.lease = req.query.lease;
+                } else {
+                    query.lease = null; // No access
+                }
+            } else {
+                query.lease = req.query.lease;
+            }
+        }
+
         const payments = await Payment.find(query).sort({ year: -1, month: -1 });
 
         res.status(200).json({

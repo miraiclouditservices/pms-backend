@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const HelpdeskSchema = new mongoose.Schema({
+    tenant: { type: mongoose.Schema.ObjectId, ref: 'Tenant' },
     ticketNumber: {
         type: String,
         unique: true

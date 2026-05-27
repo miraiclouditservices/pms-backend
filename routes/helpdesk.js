@@ -18,12 +18,12 @@ router.get('/stats', getHelpdeskStats);
 router
     .route('/')
     .get(getTickets)
-    .post(authorize('Admin', 'Owner', 'Staff'), createTicket);
+    .post(authorize('Super Admin', 'Office Owner', 'Staff Admin', 'Tenant'), createTicket);
 
 router
     .route('/:id')
     .get(getTicket)
-    .put(authorize('Admin', 'Staff'), updateTicket)
-    .delete(authorize('Admin'), deleteTicket);
+    .put(authorize('Super Admin', 'Staff Admin'), updateTicket)
+    .delete(authorize('Super Admin'), deleteTicket);
 
 module.exports = router;

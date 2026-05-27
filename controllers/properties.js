@@ -1,6 +1,7 @@
 const Property = require('../models/Property');
 const Owner = require('../models/Owner');
 const Unit = require('../models/Unit');
+const mongoose = require('mongoose');
 
 // @desc    Get all properties
 // @route   GET /api/properties
@@ -9,45 +10,33 @@ exports.getProperties = async (req, res, next) => {
     try {
         let query;
         
-        // If Owner, show only properties they have assigned units in
-        if (req.user.role === 'Owner') {
+        // Data isolation based on Floor Assignments
+        if (req.user && (req.user.role === 'Office Owner' || req.user.role === 'Owner')) {
             const owner = await Owner.findOne({ user: req.user._id });
             if (owner) {
-                // Dual-lookup lookup: retrieve units both by owner field on Unit and unitsAssigned array on Owner
-                const unitsByOwner = await Unit.find({ owner: owner._id });
-                const populatedOwner = await Owner.findById(owner._id).populate('unitsAssigned');
-                const unitsFromProfile = populatedOwner ? (populatedOwner.unitsAssigned || []) : [];
-
-                // Combine and de-duplicate units
-                const combinedUnits = [...unitsByOwner, ...unitsFromProfile];
-                const uniqueMap = new Map();
-                combinedUnits.forEach(u => {
-                    if (u && u._id) uniqueMap.set(u._id.toString(), u);
-                });
-                const assignedUnits = Array.from(uniqueMap.values());
-
-                if (assignedUnits.length > 0) {
-                    const propertyIds = [...new Set(assignedUnits.map(u => (u.property?._id || u.property)?.toString()).filter(Boolean))];
+                const assignedFloors = await mongoose.model('Floor').find({ assignedOwner: owner._id });
+                if (assignedFloors.length > 0) {
+                    const propertyIds = [...new Set(assignedFloors.map(f => f.property.toString()))];
                     query = Property.find({ _id: { $in: propertyIds } });
                 } else {
-                    return res.status(200).json({
-                        success: true,
-                        count: 0,
-                        data: []
-                    });
+                    return res.status(200).json({ success: true, count: 0, data: [] });
                 }
             } else {
-                return res.status(200).json({
-                    success: true,
-                    count: 0,
-                    data: []
-                });
+                return res.status(200).json({ success: true, count: 0, data: [] });
+            }
+        } else if (req.user && req.user.role === 'Floor Admin') {
+            const assignedFloors = await mongoose.model('Floor').find({ assignedAdmin: req.user._id });
+            if (assignedFloors.length > 0) {
+                const propertyIds = [...new Set(assignedFloors.map(f => f.property.toString()))];
+                query = Property.find({ _id: { $in: propertyIds } });
+            } else {
+                return res.status(200).json({ success: true, count: 0, data: [] });
             }
         } else {
             query = Property.find();
         }
 
-        const properties = await query;
+        const properties = await query.populate('createdBy', 'name');
 
         res.status(200).json({
             success: true,
@@ -84,7 +73,42 @@ exports.getProperty = async (req, res, next) => {
 // @access  Private/Admin
 exports.createProperty = async (req, res, next) => {
     try {
+        if (req.user) {
+            req.body.createdBy = req.user._id;
+        }
         const property = await Property.create(req.body);
+
+        // Auto-generate floors
+        const Floor = require('../models/Floor');
+        const floorsToCreate = [];
+
+        if (req.body.towerConfigs && req.body.towerConfigs.length > 0) {
+            req.body.towerConfigs.forEach(tower => {
+                for (let i = 1; i <= tower.floors; i++) {
+                    floorsToCreate.push({
+                        property: property._id,
+                        floorNumber: `${tower.name}-${i}`,
+                        floorName: `${tower.name} - Floor ${i}`,
+                        totalSft: tower.sft || 0,
+                        status: 'Active'
+                    });
+                }
+            });
+        } else if (req.body.totalFloors) {
+            for (let i = 1; i <= req.body.totalFloors; i++) {
+                floorsToCreate.push({
+                    property: property._id,
+                    floorNumber: i.toString(),
+                    floorName: `Floor ${i}`,
+                    totalSft: req.body.totalSft ? Math.floor(req.body.totalSft / req.body.totalFloors) : 0,
+                    status: 'Active'
+                });
+            }
+        }
+
+        if (floorsToCreate.length > 0) {
+            await Floor.insertMany(floorsToCreate);
+        }
 
         res.status(201).json({
             success: true,

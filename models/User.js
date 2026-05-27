@@ -18,8 +18,78 @@ const UserSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['Admin', 'Owner', 'Staff'],
-        default: 'Staff'
+        enum: ['Super Admin', 'Floor Admin', 'Office Owner', 'Staff Admin', 'Tenant'],
+        default: 'Staff Admin'
+    },
+    permissions: [{
+        type: String
+    }],
+    phoneNumber: {
+        type: String
+    },
+    emergencyNumber: {
+        type: String
+    },
+    address: {
+        type: String
+    },
+    assignedProperties: [{
+        type: mongoose.Schema.ObjectId,
+        ref: 'Property'
+    }],
+    assignedFloors: [{
+        type: mongoose.Schema.ObjectId,
+        ref: 'Floor'
+    }],
+    assignedUnits: [{
+        type: mongoose.Schema.ObjectId,
+        ref: 'Unit'
+    }],
+    companyName: {
+        type: String
+    },
+    tenantType: {
+        type: String,
+        enum: ['Individual', 'Company', 'Corporate'],
+        default: 'Individual'
+    },
+    gstPan: {
+        type: String
+    },
+    floorAssignmentStartDate: {
+        type: Date
+    },
+    floorAssignmentEndDate: {
+        type: Date
+    },
+    monthlyManagementAmount: {
+        type: Number,
+        default: 0
+    },
+    paymentType: {
+        type: String,
+        enum: ['Monthly', 'Quarterly', 'Yearly'],
+        default: 'Monthly'
+    },
+    paymentDueDay: {
+        type: Number,
+        default: 5
+    },
+    agreementStatus: {
+        type: String,
+        enum: ['Active', 'Pending', 'Expired', 'Suspended'],
+        default: 'Active'
+    },
+    paymentStatus: {
+        type: String,
+        enum: ['Paid', 'Unpaid'],
+        default: 'Unpaid'
+    },
+    idProofUrl: {
+        type: String
+    },
+    remarks: {
+        type: String
     },
     password: {
         type: String,

@@ -20,12 +20,12 @@ router.get('/:id/details', getOwnerDetails);
 router
     .route('/')
     .get(getOwners)
-    .post(authorize('Admin'), createOwner);
+    .post(authorize('Super Admin'), createOwner);
 
 router
     .route('/:id')
     .get(getOwner)
-    .put(authorize('Admin'), updateOwner)
-    .delete(authorize('Admin'), deleteOwner);
+    .put(authorize('Super Admin'), updateOwner)
+    .delete(authorize('Super Admin'), deleteOwner);
 
 module.exports = router;

@@ -11,19 +11,20 @@ const router = express.Router();
 
 const { protect, authorize } = require('../middleware/auth');
 
-// All routes require login and Admin role
+// All routes require authentication
 router.use(protect);
-router.use(authorize('Admin'));
 
+// GET all users — Super Admin and Floor Admin can view
 router
     .route('/')
-    .get(getUsers)
-    .post(createUser);
+    .get(authorize('Super Admin', 'Floor Admin'), getUsers)
+    .post(authorize('Super Admin', 'Floor Admin'), createUser);
 
+// Single user operations — only Super Admin can update or delete
 router
     .route('/:id')
-    .get(getUser)
-    .put(updateUser)
-    .delete(deleteUser);
+    .get(authorize('Super Admin', 'Floor Admin'), getUser)
+    .put(authorize('Super Admin'), updateUser)
+    .delete(authorize('Super Admin'), deleteUser);
 
 module.exports = router;

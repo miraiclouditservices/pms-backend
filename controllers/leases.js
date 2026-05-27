@@ -2,6 +2,7 @@ const Lease = require('../models/Lease');
 const Unit = require('../models/Unit');
 const Owner = require('../models/Owner');
 const Property = require('../models/Property');
+const Floor = require('../models/Floor');
 const factory = require('./factory');
 
 async function updatePropertyOccupancy(propertyId) {
@@ -39,15 +40,25 @@ exports.getLeases = async (req, res, next) => {
 
         let query = {};
         
-        // If Owner, show only leases for their assigned units
-        if (req.user && req.user.role === 'Owner') {
-            const owner = await Owner.findOne({ user: req.user._id });
-            if (owner && owner.unitsAssigned && owner.unitsAssigned.length > 0) {
-                // To keep it simple, we don't strictly filter leases here if we changed schema.
-                // We'll let admin see everything, owner sees nothing or everything depending on design.
-                // Assuming Admin use case mainly here based on the instructions.
-            } else {
-                // Return empty if owner has no units
+        // Data isolation filter for Floor Assignments
+        if (req.user) {
+            if (req.user.role === 'Office Owner' || req.user.role === 'Owner') {
+                if (req.user.assignedUnits && req.user.assignedUnits.length > 0) {
+                    query.units = { $in: req.user.assignedUnits };
+                } else {
+                    const owner = await Owner.findOne({ user: req.user._id });
+                    if (!owner) return res.status(200).json({ success: true, count: 0, data: [] });
+                    
+                    // Find floors assigned to this owner
+                    const assignedFloors = await Floor.find({ assignedOwner: owner._id });
+                    const floorIds = assignedFloors.map(f => f._id);
+                    query.floor = { $in: floorIds };
+                }
+            } else if (req.user.role === 'Floor Admin') {
+                // Find floors assigned to this admin
+                const assignedFloors = await Floor.find({ assignedAdmin: req.user._id });
+                const floorIds = assignedFloors.map(f => f._id);
+                query.floor = { $in: floorIds };
             }
         }
 
@@ -115,6 +126,16 @@ exports.createLease = async (req, res, next) => {
         let allocatedSft = 0;
         if (req.body.units && req.body.units.length > 0) {
             const units = await Unit.find({ _id: { $in: req.body.units } });
+            
+            // Validation: Prevent lease assignment to occupied units
+            const occupiedUnits = units.filter(u => u.unitStatus === 'Occupied');
+            if (occupiedUnits.length > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Cannot assign lease to already occupied units: ${occupiedUnits.map(u => u.unitNumber).join(', ')}`
+                });
+            }
+
             units.forEach(u => allocatedSft += (u.sqft || 0));
         }
         req.body.allocatedSft = allocatedSft;
@@ -152,7 +173,7 @@ exports.updateLease = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Lease not found' });
         }
 
-        // Reset old units to Vacant before update
+        // Reset old units to Available before update
         let oldPropertyIds = [];
         if (oldLease.units && oldLease.units.length > 0) {
             const oldUnits = await Unit.find({ _id: { $in: oldLease.units } });
@@ -160,13 +181,24 @@ exports.updateLease = async (req, res, next) => {
             
             await Unit.updateMany(
                 { _id: { $in: oldLease.units } },
-                { unitStatus: 'Vacant' }
+                { unitStatus: 'Available' }
             );
         }
 
         let allocatedSft = 0;
         if (req.body.units && req.body.units.length > 0) {
             const units = await Unit.find({ _id: { $in: req.body.units } });
+            
+            // Prevent lease assignment to occupied units (exclude units from the old lease)
+            const oldUnitIds = oldLease.units.map(u => u.toString());
+            const occupiedUnits = units.filter(u => u.unitStatus === 'Occupied' && !oldUnitIds.includes(u._id.toString()));
+            if (occupiedUnits.length > 0) {
+                return res.status(400).json({ 
+                    success: false, 
+                    error: `Cannot assign lease to already occupied units: ${occupiedUnits.map(u => u.unitNumber).join(', ')}`
+                });
+            }
+
             units.forEach(u => allocatedSft += (u.sqft || 0));
         }
         req.body.allocatedSft = allocatedSft;
@@ -210,14 +242,14 @@ exports.deleteLease = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Lease not found' });
         }
 
-        // Restore units to Vacant before deleting lease
+        // Restore units to Available before deleting lease
         if (lease.units && lease.units.length > 0) {
             const units = await Unit.find({ _id: { $in: lease.units } });
             const propertyIds = [...new Set(units.map(u => u.property.toString()))];
             
             await Unit.updateMany(
                 { _id: { $in: lease.units } },
-                { unitStatus: 'Vacant' }
+                { unitStatus: 'Available' }
             );
             
             for (const pid of propertyIds) {

@@ -6,6 +6,10 @@ const UnitSchema = new mongoose.Schema({
         ref: 'Property',
         required: true
     },
+    floor: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Floor'
+    },
     floorNumber: {
         type: String,
         required: [true, 'Please add a floor number']
@@ -28,13 +32,21 @@ const UnitSchema = new mongoose.Schema({
     },
     unitType: {
         type: String,
-        enum: ['Residential', 'Commercial', 'Office', 'IT', 'Retail', 'Standard'],
+        enum: ['Residential', 'Commercial', 'Office', 'IT', 'Retail', 'Standard', 'Premium', 'Cabin', 'Shared Workspace'],
         default: 'Standard'
     },
     unitStatus: {
         type: String,
-        enum: ['Vacant', 'Occupied', 'Maintenance', 'Reserved'],
-        default: 'Vacant'
+        enum: ['Available', 'Occupied', 'Under Maintenance', 'Reserved'],
+        default: 'Available'
+    },
+    tenant: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Tenant'
+    },
+    lease: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Lease'
     },
     ownerName: {
         type: String
@@ -54,5 +66,25 @@ const UnitSchema = new mongoose.Schema({
 
 // Ensure unitNumber is unique within a property
 UnitSchema.index({ property: 1, unitNumber: 1 }, { unique: true });
+
+// Call updatePropertyStats after save
+UnitSchema.post('save', async function() {
+    if (this.property) {
+        await mongoose.model('Property').updatePropertyStats(this.property);
+    }
+    if (this.floor) {
+        await mongoose.model('Floor').updateFloorStats(this.floor);
+    }
+});
+
+// Call updatePropertyStats before remove
+UnitSchema.post('deleteOne', { document: true, query: false }, async function() {
+    if (this.property) {
+        await mongoose.model('Property').updatePropertyStats(this.property);
+    }
+    if (this.floor) {
+        await mongoose.model('Floor').updateFloorStats(this.floor);
+    }
+});
 
 module.exports = mongoose.model('Unit', UnitSchema);

@@ -1,5 +1,5 @@
 // Generic controller for CRUD operations
-exports.getAll = (Model) => async (req, res, next) => {
+exports.getAll = (Model, populateOptions) => async (req, res, next) => {
     try {
         let query;
         
@@ -7,8 +7,11 @@ exports.getAll = (Model) => async (req, res, next) => {
         const reqQuery = { ...req.query };
 
         // Fields to exclude from matching
-        const removeFields = ['select', 'sort', 'page', 'limit'];
+        const removeFields = ['select', 'sort', 'page', 'limit', 'search'];
         removeFields.forEach(param => delete reqQuery[param]);
+
+        // Hoist modelName so it's accessible in both Owner isolation and search blocks
+        const modelName = Model.modelName;
 
         // If Owner, apply strict data isolation filters
         if (req.user && req.user.role === 'Owner') {
@@ -21,8 +24,6 @@ exports.getAll = (Model) => async (req, res, next) => {
 
             const assignedUnits = owner.unitsAssigned || [];
             const assignedUnitNumbers = assignedUnits.map(u => u.unitNumber);
-
-            const modelName = Model.modelName;
 
             if (modelName === 'Visitor' || modelName === 'Helpdesk') {
                 reqQuery.$or = [
@@ -43,10 +44,46 @@ exports.getAll = (Model) => async (req, res, next) => {
             }
         }
 
+        if (req.query.search && typeof req.query.search === 'string') {
+            const regex = new RegExp(req.query.search, 'i');
+            // Basic generic search for text fields (can be customized per model)
+            // If it's Asset, search specific fields. Otherwise fallback to empty or known fields.
+            if (modelName === 'Asset') {
+                reqQuery.$or = [
+                    { assetDescription: regex },
+                    { assetCode: regex },
+                    { serialNumber: regex },
+                    { category: regex }
+                ];
+            }
+        }
+
         query = Model.find(reqQuery);
 
+        if (populateOptions) {
+            query = query.populate(populateOptions);
+        }
+
+        // Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 1000;
+        const startIndex = (page - 1) * limit;
+
+        if (req.query.page || req.query.limit) {
+            query = query.skip(startIndex).limit(limit);
+        }
+
         const data = await query;
-        res.status(200).json({ success: true, count: data.length, data });
+        const total = await Model.countDocuments(reqQuery);
+
+        res.status(200).json({ 
+            success: true, 
+            count: data.length, 
+            total: total,
+            page: page,
+            pages: Math.ceil(total / limit),
+            data 
+        });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }

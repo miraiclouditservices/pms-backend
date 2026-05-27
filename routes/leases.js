@@ -15,12 +15,12 @@ router.use(protect);
 router
     .route('/')
     .get(getLeases)
-    .post(authorize('Admin'), createLease);
+    .post(authorize('Super Admin', 'Floor Admin', 'Office Owner'), createLease);
 
 router
     .route('/:id')
     .get(getLease)
-    .put(authorize('Admin'), updateLease)
-    .delete(authorize('Admin'), deleteLease);
+    .put(authorize('Super Admin', 'Floor Admin', 'Office Owner'), updateLease)
+    .delete(authorize('Super Admin'), deleteLease);
 
 module.exports = router;

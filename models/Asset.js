@@ -47,6 +47,15 @@ const AssetSchema = new mongoose.Schema({
     warrantyEndDate: {
         type: Date
     },
+    amcStartDate: {
+        type: Date
+    },
+    amcEndDate: {
+        type: Date
+    },
+    vendorName: {
+        type: String
+    },
     vendor: {
         type: mongoose.Schema.ObjectId,
         ref: 'Vendor'
@@ -61,6 +70,10 @@ const AssetSchema = new mongoose.Schema({
         type: String,
         enum: ['Active', 'Under Repair', 'Scrapped'],
         default: 'Active'
+    },
+    createdBy: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User'
     },
     createdAt: {
         type: Date,

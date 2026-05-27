@@ -17,13 +17,13 @@ router.use(protect);
 router
     .route('/')
     .get(getProperties)
-    .post(authorize('Admin'), createProperty);
+    .post(authorize('Super Admin'), createProperty);
 
 router
     .route('/:id')
     .get(getProperty)
-    .put(authorize('Admin'), updateProperty)
-    .delete(authorize('Admin'), deleteProperty);
+    .put(authorize('Super Admin'), updateProperty)
+    .delete(authorize('Super Admin'), deleteProperty);
 
 router.route('/:id/floors-units')
     .get(getPropertyStructure);

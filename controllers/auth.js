@@ -17,55 +17,21 @@ exports.register = async (req, res, next) => {
         // 2. Check current user count
         const userCount = await User.countDocuments();
 
-        // 3. Authorization Logic
-        if (userCount > 0) {
-            // Require Admin token
-            let token;
-            if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-                token = req.headers.authorization.split(' ')[1];
-            }
-
-            if (!token) {
-                return res.status(401).json({ success: false, error: 'Registration is restricted to Administrators. Please provide a valid token.' });
-            }
-
-            try {
-                const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                const requester = await User.findById(decoded.id);
-
-                if (!requester || requester.role !== 'Admin') {
-                    return res.status(403).json({ success: false, error: 'Only Administrators can register new users.' });
-                }
-            } catch (err) {
-                return res.status(401).json({ success: false, error: 'Invalid or expired token.' });
-            }
-        }
+        // 3. Authorization Logic (Bypassed per user request)
+        // Anyone who creates an account via the register route will become a Super Admin.
 
         // 4. Create User
-        // If first user, force Admin role. Otherwise use provided role or default to Staff.
+        // Whoever registers through this endpoint becomes a Super Admin
         const user = await User.create({
             name,
             email,
             password,
-            role: userCount === 0 ? 'Admin' : (role || 'Staff')
+            role: 'Super Admin'
         });
 
         // 5. Response Logic
-        // If first user, return token (auto-login). Otherwise just return user data.
-        if (userCount === 0) {
-            return sendTokenResponse(user, 201, res);
-        }
-
-        res.status(201).json({
-            success: true,
-            message: 'User registered successfully',
-            data: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role
-            }
-        });
+        // Always return token (auto-login) since they are registering themselves
+        return sendTokenResponse(user, 201, res);
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }
@@ -91,7 +57,8 @@ exports.login = async (req, res, next) => {
         }
 
         // Check if role matches if provided (for tab-based login verification)
-        if (role && user.role !== role) {
+        // Super Admin can bypass any tab check
+        if (role && user.role !== role && user.role !== 'Super Admin') {
             return res.status(401).json({ success: false, error: `Unauthorized: User is not registered as ${role}` });
         }
 
@@ -103,10 +70,10 @@ exports.login = async (req, res, next) => {
         }
 
         // Additional check for Owners: Ensure they have an Owner profile
-        if (user.role === 'Owner') {
+        if (role === 'Office Owner' || user.role === 'Office Owner') {
             const Owner = require('../models/Owner');
             const ownerProfile = await Owner.findOne({ user: user._id });
-            if (!ownerProfile) {
+            if (!ownerProfile && user.role !== 'Super Admin') {
                 return res.status(403).json({ success: false, error: 'Owner profile not found. Please contact support.' });
             }
         }
@@ -129,21 +96,53 @@ const sendTokenResponse = (user, statusCode, res) => {
             id: user._id,
             name: user.name,
             email: user.email,
-            role: user.role
+            role: user.role,
+            permissions: user.permissions || []
         }
     });
 };
 
-// @desc    Get current logged in user
-// @route   GET /api/auth/me
-// @access  Private
 exports.getMe = async (req, res, next) => {
     try {
-        const user = await User.findById(req.user.id);
+        const user = await User.findById(req.user.id)
+            .populate('assignedProperties')
+            .populate('assignedFloors')
+            .populate({
+                path: 'assignedUnits',
+                populate: [
+                    { path: 'property' },
+                    { path: 'floor' }
+                ]
+            });
+
+        let ownerProfile = null;
+        let activeLeases = [];
+        
+        if (user.role === 'Owner' || user.role === 'Office Owner') {
+            const Owner = require('../models/Owner');
+            ownerProfile = await Owner.findOne({ user: user._id })
+                .populate({
+                    path: 'unitsAssigned',
+                    populate: [
+                        { path: 'property' },
+                        { path: 'floor' }
+                    ]
+                });
+        }
+
+        if (user.assignedUnits && user.assignedUnits.length > 0) {
+            const Lease = require('../models/Lease');
+            activeLeases = await Lease.find({ units: { $in: user.assignedUnits } })
+                .populate('property')
+                .populate('floor')
+                .populate('units');
+        }
 
         res.status(200).json({
             success: true,
-            data: user
+            data: user,
+            ownerProfile,
+            activeLeases
         });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
