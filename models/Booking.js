@@ -5,38 +5,65 @@ const BookingSchema = new mongoose.Schema({
         type: String,
         unique: true
     },
-    bookingParticulars: {
-        type: String,
-        required: [true, 'Please add booking particulars']
+    property: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Property',
+        required: [true, 'Please select a property']
     },
-    dateOfBooking: {
+    floor: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Floor',
+        required: [true, 'Please select a floor']
+    },
+    meetingRoom: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'MeetingRoom',
+        required: [true, 'Please select a meeting room']
+    },
+    bookingDate: {
         type: Date,
-        default: Date.now
+        required: [true, 'Please select a booking date']
     },
-    timeOfBooking: {
-        type: String
-    },
-    bookingFromDate: {
+    bookingFromDate: { 
         type: Date,
         required: [true, 'Please add start date']
     },
-    bookingToDate: {
+    bookingToDate: { 
         type: Date,
         required: [true, 'Please add end date']
     },
-    paymentStatus: {
+    startTime: {
         type: String,
-        enum: ['Paid', 'Pending'],
-        default: 'Pending'
+        required: [true, 'Please specify start time']
+    },
+    endTime: {
+        type: String,
+        required: [true, 'Please specify end time']
     },
     bookedBy: {
         type: String,
         required: [true, 'Please add booker name']
     },
+    bookedByUser: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User'
+    },
+    bookingParticulars: {
+        type: String,
+        required: [true, 'Please add booking particulars']
+    },
     bookingStatus: {
         type: String,
         enum: ['Approved', 'Rejected', 'Pending'],
         default: 'Pending'
+    },
+    startNotificationSent: {
+        type: Boolean,
+        default: false
+    },
+    endNotificationSent: {
+        type: Boolean,
+        default: false
     },
     createdAt: {
         type: Date,
@@ -48,10 +75,6 @@ const BookingSchema = new mongoose.Schema({
 BookingSchema.pre('save', async function () {
     if (!this.bookingId) {
         this.bookingId = 'BKG-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    }
-    
-    if (!this.timeOfBooking) {
-        this.timeOfBooking = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     }
 });
 

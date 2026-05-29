@@ -24,7 +24,18 @@ FloorSchema.statics.updateFloorStats = async function(floorId) {
         const units = await mongoose.model('Unit').find({ floor: floorId });
         const leases = await mongoose.model('Lease').find({ floor: floorId, status: 'Active' });
 
-        const occupiedSft = units.reduce((acc, unit) => acc + (unit.sqft || 0), 0);
+        let occupiedMeetingRoomsSft = 0;
+        try {
+            const MeetingRoom = mongoose.model('MeetingRoom');
+            if (MeetingRoom) {
+                const meetingRooms = await MeetingRoom.find({ floor: floorId, $or: [{ unit: null }, { unit: { $exists: false } }] });
+                occupiedMeetingRoomsSft = meetingRooms.reduce((acc, room) => acc + (room.sqft || 0), 0);
+            }
+        } catch (e) {
+            // MeetingRoom model might not be registered yet
+        }
+
+        const occupiedSft = units.reduce((acc, unit) => acc + (unit.sqft || 0), 0) + occupiedMeetingRoomsSft;
         
         // availableSft is the defined totalSft minus occupiedSft
         const availableSft = floor.totalSft - occupiedSft;
@@ -40,5 +51,29 @@ FloorSchema.statics.updateFloorStats = async function(floorId) {
         console.error('Error calculating floor stats:', err);
     }
 };
+
+// Hook to update Property totalFloors when floor is saved
+FloorSchema.post('save', async function() {
+    if (this.property) {
+        try {
+            const totalFloors = await this.constructor.countDocuments({ property: this.property });
+            await mongoose.model('Property').findByIdAndUpdate(this.property, { totalFloors });
+        } catch (err) {
+            console.error('Error updating property totalFloors on save:', err);
+        }
+    }
+});
+
+// Hook to update Property totalFloors when floor is deleted
+FloorSchema.post('deleteOne', { document: true, query: false }, async function() {
+    if (this.property) {
+        try {
+            const totalFloors = await this.constructor.countDocuments({ property: this.property });
+            await mongoose.model('Property').findByIdAndUpdate(this.property, { totalFloors });
+        } catch (err) {
+            console.error('Error updating property totalFloors on delete:', err);
+        }
+    }
+});
 
 module.exports = mongoose.model('Floor', FloorSchema);

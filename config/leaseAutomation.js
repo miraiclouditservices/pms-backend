@@ -141,10 +141,56 @@ async function runLeaseAutomation() {
                                 type: 'Info'
                             });
                         }
-                    }
                 }
             }
         }
+        }
+
+        // 4. Send Management Payment Reminder Notifications to Users 5 Days Before Payment is Due
+        console.log('Checking user management payment schedules...');
+        const usersForReminder = await User.find({
+            role: { $in: ['Floor Admin', 'Office Owner', 'Owner'] },
+            agreementStatus: 'Active'
+        });
+
+        for (const u of usersForReminder) {
+            if (!u.paymentDueDay) continue;
+
+            // Calculate next due date
+            const nextDue = new Date(today.getFullYear(), today.getMonth(), u.paymentDueDay);
+            // If the due day of this month has already passed, the next due date is next month
+            if (nextDue < today) {
+                nextDue.setMonth(nextDue.getMonth() + 1);
+            }
+
+            const diffTime = nextDue - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            // If it is exactly 5 days before the due date, create notification
+            if (diffDays === 5) {
+                console.log(`User ${u.name} payment due in 5 days (${nextDue.toLocaleDateString()}). Triggering notification.`);
+                
+                // Verify notification doesn't exist yet for today to avoid duplicates
+                const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+                
+                const existingNotif = await Notification.findOne({
+                    user: u._id,
+                    title: 'Upcoming Management Payment Reminder',
+                    createdAt: { $gte: startOfDay, $lt: endOfDay }
+                });
+
+                if (!existingNotif) {
+                    await Notification.create({
+                        user: u._id,
+                        title: 'Upcoming Management Payment Reminder',
+                        message: `Reminder: Your monthly management payment of ₹${u.monthlyManagementAmount || 0} is due on ${nextDue.toLocaleDateString()} (in 5 days). Please pay on time.`,
+                        type: 'Reminder'
+                    });
+                }
+            }
+        }
+
         console.log('--- Lease Automation Job Completed ---');
     } catch (err) {
         console.error('Error during Lease Automation Job:', err);

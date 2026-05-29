@@ -14,6 +14,11 @@ connectDB().then(() => {
         // Run once on boot, then every 24 hours
         runLeaseAutomation();
         setInterval(runLeaseAutomation, 24 * 60 * 60 * 1000);
+
+        // Run booking scheduler once on boot, then every 1 minute
+        const { runBookingScheduler } = require('./config/bookingScheduler');
+        runBookingScheduler();
+        setInterval(runBookingScheduler, 60 * 1000);
     } catch (e) {
         console.error('Lease automation startup error:', e);
     }
@@ -43,12 +48,12 @@ app.use('/api/leases', require('./routes/leases'));
 app.use('/api/finance', require('./routes/finance'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/assets', require('./routes/assets'));
-app.use('/api/amc', require('./routes/amc'));
 app.use('/api/vendors', require('./routes/vendors'));
 app.use('/api/visitors', require('./routes/visitors'));
 app.use('/api/materials', require('./routes/materials'));
 app.use('/api/helpdesk', require('./routes/helpdesk'));
 app.use('/api/bookings', require('./routes/bookings'));
+app.use('/api/meeting-rooms', require('./routes/meetingRooms'));
 app.use('/api/floor-assignments', require('./routes/floorAssignments'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/notifications', require('./routes/notifications'));

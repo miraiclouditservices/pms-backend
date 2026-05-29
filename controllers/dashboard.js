@@ -15,12 +15,74 @@ exports.getMetrics = async (req, res) => {
         const endOfToday   = new Date(now); endOfToday.setHours(23,59,59,999);
         const todayStr     = now.toISOString().split('T')[0];
 
+        const { propertyId, month, year, status } = req.query;
+
         // Scoping filters
-        let floorQuery = {}, unitQuery = {}, leaseQuery = { status: 'Active' };
+        let floorQuery = {}, unitQuery = {}, leaseQuery = {};
         let visitorQuery = {};
         let materialQuery = {};
         let propertyQuery = {};
         let staffQuery = { role: { $in: ['Staff Admin','Floor Admin','Watchman','Security'] } };
+
+        // 1. Property Filter
+        if (propertyId) {
+            propertyQuery._id = propertyId;
+            floorQuery.property = propertyId;
+            unitQuery.property = propertyId;
+            leaseQuery.property = propertyId;
+            visitorQuery.property = propertyId;
+            materialQuery.property = propertyId;
+            staffQuery.assignedProperties = propertyId;
+        }
+
+        // 2. Month & Year Filter
+        if (month || year) {
+            const y = year ? parseInt(year, 10) : now.getFullYear();
+            const m = month ? parseInt(month, 10) - 1 : now.getMonth();
+            const firstDayOfMonth = new Date(y, m, 1, 0, 0, 0, 0);
+            const lastDayOfMonth  = new Date(y, m + 1, 0, 23, 59, 59, 999);
+            
+            // Leases active in that month range
+            leaseQuery.startDate = { $lte: lastDayOfMonth };
+            leaseQuery.endDate = { $gte: firstDayOfMonth };
+
+            // Visitors in that month
+            const startStr = firstDayOfMonth.toISOString().split('T')[0];
+            const endStr = lastDayOfMonth.toISOString().split('T')[0];
+            visitorQuery.visitDate = { $gte: startStr, $lte: endStr };
+
+            // Materials in that month
+            materialQuery.createdAt = { $gte: firstDayOfMonth, $lte: lastDayOfMonth };
+        }
+
+        // 3. Status Filter
+        if (status && status !== 'All') {
+            if (status === 'Active') {
+                leaseQuery.status = 'Active';
+                unitQuery.unitStatus = 'Occupied';
+            } else if (status === 'Occupied') {
+                unitQuery.unitStatus = 'Occupied';
+                leaseQuery.status = 'Active';
+            } else if (status === 'Vacant') {
+                unitQuery.unitStatus = 'Available';
+            } else if (status === 'Pending') {
+                visitorQuery.status = 'Pending';
+                materialQuery.status = 'Pending';
+            } else if (status === 'Expired') {
+                leaseQuery.status = 'Expired';
+            } else if (status === 'Maintenance') {
+                unitQuery.unitStatus = 'Maintenance';
+            }
+        } else {
+            // Default active lease status if not filtered otherwise
+            if (!leaseQuery.status) {
+                if (month || year) {
+                    leaseQuery.status = { $in: ['Active', 'Expired'] };
+                } else {
+                    leaseQuery.status = 'Active';
+                }
+            }
+        }
 
         const isSuperAdmin = ['Super Admin','Admin','Staff Admin'].includes(req.user?.role);
 
@@ -28,20 +90,18 @@ exports.getMetrics = async (req, res) => {
             const user = await User.findById(req.user.id);
             const assignedUnits = user?.assignedUnits || [];
             
-            // Scope units and leases by assignedUnits list
-            unitQuery._id = { $in: assignedUnits };
-            leaseQuery.units = { $in: assignedUnits };
+            unitQuery._id = unitQuery._id ? { $and: [unitQuery._id, { $in: assignedUnits }] } : { $in: assignedUnits };
+            leaseQuery.units = leaseQuery.units ? { $and: [leaseQuery.units, { $in: assignedUnits }] } : { $in: assignedUnits };
             
-            // Retrieve linked floors and properties
             const units = await Unit.find({ _id: { $in: assignedUnits } });
             const floorIds = units.map(u => u.floor).filter(Boolean);
-            floorQuery._id = { $in: floorIds };
+            floorQuery._id = floorQuery._id ? { $and: [floorQuery._id, { $in: floorIds }] } : { $in: floorIds };
 
             const propertyIds = units.map(u => u.property).filter(Boolean);
-            propertyQuery._id = { $in: propertyIds };
+            propertyQuery._id = propertyQuery._id ? { $and: [propertyQuery._id, { $in: propertyIds }] } : { $in: propertyIds };
 
-            // Scoping visitors and materials
             visitorQuery = {
+                ...visitorQuery,
                 $or: [
                     { unit: { $in: assignedUnits } },
                     { createdBy: req.user._id },
@@ -50,6 +110,7 @@ exports.getMetrics = async (req, res) => {
             };
 
             materialQuery = {
+                ...materialQuery,
                 $or: [
                     { unit: { $in: assignedUnits } },
                     { createdBy: req.user._id }
@@ -65,13 +126,13 @@ exports.getMetrics = async (req, res) => {
             const fIds   = floors.map(f => f._id);
             const propertyIds = floors.map(f => f.property).filter(Boolean);
 
-            floorQuery._id  = { $in: fIds };
-            unitQuery.floor  = { $in: fIds };
-            leaseQuery.floor = { $in: fIds };
+            floorQuery._id = floorQuery._id ? { $and: [floorQuery._id, { $in: fIds }] } : { $in: fIds };
+            unitQuery.floor = unitQuery.floor ? { $and: [unitQuery.floor, { $in: fIds }] } : { $in: fIds };
+            leaseQuery.floor = leaseQuery.floor ? { $and: [leaseQuery.floor, { $in: fIds }] } : { $in: fIds };
             
-            visitorQuery.floor = { $in: fIds };
-            materialQuery.floor = { $in: fIds };
-            propertyQuery._id = { $in: propertyIds };
+            visitorQuery.floor = visitorQuery.floor ? { $and: [visitorQuery.floor, { $in: fIds }] } : { $in: fIds };
+            materialQuery.floor = materialQuery.floor ? { $and: [materialQuery.floor, { $in: fIds }] } : { $in: fIds };
+            propertyQuery._id = propertyQuery._id ? { $and: [propertyQuery._id, { $in: propertyIds }] } : { $in: propertyIds };
 
             staffQuery.$or = [
                 { assignedFloors: { $in: fIds } },
@@ -80,19 +141,40 @@ exports.getMetrics = async (req, res) => {
         }
 
         // ── Core counts ────────────────────────────────────────────────────────
+        // ── Core counts ────────────────────────────────────────────────────────
+        let occupiedUnitsQuery = { ...unitQuery };
+        if (!occupiedUnitsQuery.unitStatus) {
+            occupiedUnitsQuery.unitStatus = 'Occupied';
+        } else if (occupiedUnitsQuery.unitStatus !== 'Occupied') {
+            occupiedUnitsQuery = { _id: null };
+        }
+
         const [totalProperties, totalFloors, totalUnits, occupiedUnits] = await Promise.all([
-            isSuperAdmin ? Property.countDocuments() : Property.countDocuments(propertyQuery),
+            Property.countDocuments(propertyQuery),
             Floor.countDocuments(floorQuery),
             Unit.countDocuments(unitQuery),
-            Unit.countDocuments({ ...unitQuery, unitStatus: 'Occupied' }),
+            Unit.countDocuments(occupiedUnitsQuery),
         ]);
 
         // ── SFT ────────────────────────────────────────────────────────────────
         const floorRecords = await Floor.find(floorQuery);
         const totalSft    = floorRecords.reduce((s,f) => s+(f.totalSft||0),0);
         const occupiedSft = floorRecords.reduce((s,f) => s+(f.occupiedSft||0),0);
-        const availableSft = totalSft - occupiedSft;
-        const occupancyPct = totalSft > 0 ? Math.round((occupiedSft/totalSft)*100) : 0;
+        
+        let calculatedOccupiedSft = occupiedSft;
+        let calculatedAvailableSft = totalSft - occupiedSft;
+        
+        if (status === 'Occupied' || status === 'Active') {
+            calculatedAvailableSft = 0;
+        } else if (status === 'Vacant') {
+            calculatedOccupiedSft = 0;
+            calculatedAvailableSft = totalSft;
+        } else if (status === 'Maintenance') {
+            calculatedOccupiedSft = 0;
+            calculatedAvailableSft = 0;
+        }
+        
+        const occupancyPct = totalSft > 0 ? Math.round((calculatedOccupiedSft/totalSft)*100) : 0;
 
         // ── Revenue ────────────────────────────────────────────────────────────
         const activeLeases = await Lease.find(leaseQuery);
@@ -109,19 +191,40 @@ exports.getMetrics = async (req, res) => {
             .populate('property','propertyName').sort('endDate').limit(5);
 
         // ── Visitors ───────────────────────────────────────────────────────────
+        let visitorsCheckedInQuery = { ...visitorQuery };
+        if (!visitorsCheckedInQuery.status) {
+            visitorsCheckedInQuery.status = 'Checked-In';
+        } else if (visitorsCheckedInQuery.status !== 'Checked-In') {
+            visitorsCheckedInQuery = { _id: null };
+        }
+
         const [visitorsToday, visitorsPending, visitorsCheckedIn] = await Promise.all([
             Visitor.countDocuments({ ...visitorQuery, visitDate: todayStr }),
             Visitor.countDocuments({ ...visitorQuery, status: 'Pending' }),
-            Visitor.countDocuments({ ...visitorQuery, status: 'Checked-In' }),
+            Visitor.countDocuments(visitorsCheckedInQuery),
         ]);
         const recentVisitors = await Visitor.find(visitorQuery).sort('-createdAt').limit(5)
             .populate('property','propertyName').populate('createdBy','name');
 
         // ── Gate Passes ────────────────────────────────────────────────────────
+        let gatePassPendingQuery = { ...materialQuery };
+        if (!gatePassPendingQuery.status) {
+            gatePassPendingQuery.status = 'Pending';
+        } else if (gatePassPendingQuery.status !== 'Pending') {
+            gatePassPendingQuery = { _id: null };
+        }
+
+        let gatePassApprovedQuery = { ...materialQuery };
+        if (!gatePassApprovedQuery.status) {
+            gatePassApprovedQuery.status = { $in: ['Approved', 'Cleared'] };
+        } else if (typeof gatePassApprovedQuery.status === 'string' && !['Approved', 'Cleared'].includes(gatePassApprovedQuery.status)) {
+            gatePassApprovedQuery = { _id: null };
+        }
+
         const [gatePassTotal, gatePassPending, gatePassApproved] = await Promise.all([
             Material.countDocuments(materialQuery),
-            Material.countDocuments({ ...materialQuery, status: 'Pending' }),
-            Material.countDocuments({ ...materialQuery, status: { $in: ['Approved','Cleared'] } }),
+            Material.countDocuments(gatePassPendingQuery),
+            Material.countDocuments(gatePassApprovedQuery),
         ]);
         const recentGatePasses = await Material.find(materialQuery).sort('-createdAt').limit(5)
             .populate('property','propertyName').populate('createdBy','name');
@@ -161,7 +264,7 @@ exports.getMetrics = async (req, res) => {
             data: {
                 metrics: {
                     totalProperties, totalFloors, totalUnits, occupiedUnits,
-                    totalSft, occupiedSft, availableSft, occupancyPct,
+                    totalSft, occupiedSft: calculatedOccupiedSft, availableSft: calculatedAvailableSft, occupancyPct,
                     leaseRevenue, camRevenue, totalRevenue,
                     activeTenantsCount, expiringLeasesCount,
                     visitorsToday, visitorsPending, visitorsCheckedIn,

@@ -21,7 +21,7 @@ const PropertySchema = new mongoose.Schema({
     propertyType: {
         type: String,
         required: [true, 'Please add property type'],
-        enum: ['Residential', 'Commercial', 'Industrial', 'Mixed-Use', 'Office']
+        enum: ['Residential', 'Commercial', 'Industrial', 'Mixed-Use', 'Mixed Use', 'Office', 'IT Park']
     },
     openingTime: {
         type: String

@@ -18,6 +18,9 @@ const UnitSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Please add a unit number']
     },
+    unitName: {
+        type: String
+    },
     sqft: {
         type: Number,
         required: [true, 'Please add square feet']

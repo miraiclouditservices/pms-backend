@@ -142,11 +142,11 @@ exports.createLease = async (req, res, next) => {
 
         const lease = await Lease.create(req.body);
 
-        // Update unit status to 'Occupied' for all linked units
+        // Update unit status to 'Occupied' and link lease for all linked units
         if (lease.units && lease.units.length > 0) {
             await Unit.updateMany(
                 { _id: { $in: lease.units } },
-                { unitStatus: 'Occupied' }
+                { unitStatus: 'Occupied', lease: lease._id }
             );
 
             // Update property occupancy
@@ -173,7 +173,7 @@ exports.updateLease = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Lease not found' });
         }
 
-        // Reset old units to Available before update
+        // Reset old units to Available and clear lease before update
         let oldPropertyIds = [];
         if (oldLease.units && oldLease.units.length > 0) {
             const oldUnits = await Unit.find({ _id: { $in: oldLease.units } });
@@ -181,7 +181,7 @@ exports.updateLease = async (req, res, next) => {
             
             await Unit.updateMany(
                 { _id: { $in: oldLease.units } },
-                { unitStatus: 'Available' }
+                { unitStatus: 'Available', lease: null }
             );
         }
 
@@ -209,14 +209,14 @@ exports.updateLease = async (req, res, next) => {
         });
 
         let newPropertyIds = [];
-        // Set new/updated units to Occupied
+        // Set new/updated units to Occupied and link lease
         if (lease.units && lease.units.length > 0 && lease.status === 'Active') {
             const newUnits = await Unit.find({ _id: { $in: lease.units } });
             newPropertyIds = [...new Set(newUnits.map(u => u.property.toString()))];
             
             await Unit.updateMany(
                 { _id: { $in: lease.units } },
-                { unitStatus: 'Occupied' }
+                { unitStatus: 'Occupied', lease: lease._id }
             );
         }
 
@@ -242,14 +242,14 @@ exports.deleteLease = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Lease not found' });
         }
 
-        // Restore units to Available before deleting lease
+        // Restore units to Available and clear lease before deleting lease
         if (lease.units && lease.units.length > 0) {
             const units = await Unit.find({ _id: { $in: lease.units } });
             const propertyIds = [...new Set(units.map(u => u.property.toString()))];
             
             await Unit.updateMany(
                 { _id: { $in: lease.units } },
-                { unitStatus: 'Available' }
+                { unitStatus: 'Available', lease: null }
             );
             
             for (const pid of propertyIds) {

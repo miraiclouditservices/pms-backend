@@ -108,6 +108,20 @@ exports.createUser = async (req, res, next) => {
 
         const user = await User.create(req.body);
         
+        // Create welcome/assignment notification for the provisioned user
+        if (user.role === 'Floor Admin' || user.role === 'Office Owner') {
+            const Notification = require('../models/Notification');
+            const formattedStart = user.floorAssignmentStartDate ? new Date(user.floorAssignmentStartDate).toLocaleDateString() : 'N/A';
+            const formattedEnd = user.floorAssignmentEndDate ? new Date(user.floorAssignmentEndDate).toLocaleDateString() : 'N/A';
+            
+            await Notification.create({
+                user: user._id,
+                title: user.role === 'Floor Admin' ? 'Floor Assignment Activated' : 'Office Agreement Activated',
+                message: `Hello ${user.name}, your account has been provisioned as ${user.role}. Your assignment is active from ${formattedStart} to ${formattedEnd}. Monthly Management Amount: ₹${user.monthlyManagementAmount || 0}.`,
+                type: 'Info'
+            });
+        }
+        
         // Handle Role-based Profile Creation and Floor Assignments
         if (user.role === 'Office Owner' || user.role === 'Owner') {
             const Owner = require('../models/Owner');
@@ -129,6 +143,7 @@ exports.createUser = async (req, res, next) => {
                     await Unit.findByIdAndUpdate(unitId, {
                         owner: newOwner._id,
                         ownerName: newOwner.ownerName,
+                        unitStatus: 'Occupied',
                         tenant: null, // Clear any previous tenant mapping just in case
                     });
                 }
@@ -149,6 +164,27 @@ exports.createUser = async (req, res, next) => {
             data: user
         });
     } catch (err) {
+        if (err.code === 11000) {
+            let field = 'input';
+            if (err.keyValue) {
+                const keys = Object.keys(err.keyValue);
+                if (keys.length > 0) {
+                    field = keys[0];
+                }
+            } else if (err.message && err.message.includes('email_1')) {
+                field = 'email';
+            } else if (err.message && err.message.includes('phoneNumber')) {
+                field = 'phoneNumber';
+            }
+            
+            let message = 'A duplicate record already exists in our database.';
+            if (field === 'email') {
+                message = 'The email address you entered is already registered with another account.';
+            } else if (field === 'phoneNumber') {
+                message = 'The primary phone number you entered is already in use by another user.';
+            }
+            return res.status(400).json({ success: false, error: message });
+        }
         res.status(400).json({ success: false, error: err.message });
     }
 };
@@ -219,7 +255,7 @@ exports.updateUser = async (req, res, next) => {
             if (oldAssignedUnits.length > 0) {
                 await Unit.updateMany(
                     { _id: { $in: oldAssignedUnits }, owner: ownerProfile._id },
-                    { owner: null, ownerName: '' }
+                    { owner: null, ownerName: '', unitStatus: 'Available' }
                 );
             }
 
@@ -227,7 +263,15 @@ exports.updateUser = async (req, res, next) => {
             if (user.assignedUnits && user.assignedUnits.length > 0) {
                 await Unit.updateMany(
                     { _id: { $in: user.assignedUnits } },
-                    { owner: ownerProfile._id, ownerName: ownerProfile.ownerName }
+                    { owner: ownerProfile._id, ownerName: ownerProfile.ownerName, unitStatus: 'Occupied' }
+                );
+            }
+
+            // If agreementStatus changes to non-Active, release all assigned units to Available
+            if (user.agreementStatus !== 'Active') {
+                await Unit.updateMany(
+                    { owner: ownerProfile._id },
+                    { owner: null, ownerName: '', unitStatus: 'Available' }
                 );
             }
         }
@@ -237,6 +281,27 @@ exports.updateUser = async (req, res, next) => {
             data: user
         });
     } catch (err) {
+        if (err.code === 11000) {
+            let field = 'input';
+            if (err.keyValue) {
+                const keys = Object.keys(err.keyValue);
+                if (keys.length > 0) {
+                    field = keys[0];
+                }
+            } else if (err.message && err.message.includes('email_1')) {
+                field = 'email';
+            } else if (err.message && err.message.includes('phoneNumber')) {
+                field = 'phoneNumber';
+            }
+            
+            let message = 'A duplicate record already exists in our database.';
+            if (field === 'email') {
+                message = 'The email address you entered is already registered with another account.';
+            } else if (field === 'phoneNumber') {
+                message = 'The primary phone number you entered is already in use by another user.';
+            }
+            return res.status(400).json({ success: false, error: message });
+        }
         res.status(400).json({ success: false, error: err.message });
     }
 };
@@ -261,7 +326,7 @@ exports.deleteUser = async (req, res, next) => {
             await Floor.updateMany({ assignedOwner: ownerProfile._id }, { assignedOwner: null });
             
             const Unit = require('../models/Unit');
-            await Unit.updateMany({ owner: ownerProfile._id }, { owner: null, ownerName: '' });
+            await Unit.updateMany({ owner: ownerProfile._id }, { owner: null, ownerName: '', unitStatus: 'Available' });
 
             await ownerProfile.deleteOne();
         }

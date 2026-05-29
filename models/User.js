@@ -21,6 +21,11 @@ const UserSchema = new mongoose.Schema({
         enum: ['Super Admin', 'Floor Admin', 'Office Owner', 'Staff Admin', 'Tenant'],
         default: 'Staff Admin'
     },
+    staffCategory: {
+        type: String,
+        enum: ['Security', 'Watchman', 'Electrician', 'Plumber', 'Helpdesk', 'Gardener', 'Housekeeping', 'Supervisor', 'Other', 'None'],
+        default: 'None'
+    },
     permissions: [{
         type: String
     }],
