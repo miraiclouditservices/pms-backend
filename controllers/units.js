@@ -17,7 +17,7 @@ exports.getUnits = async (req, res, next) => {
 
         // Strict data isolation filter for Floor Assignments
         if (req.user) {
-            if (req.user.role === 'Office Owner' || req.user.role === 'Owner') {
+            if (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner') {
                 const owner = await mongoose.model('Owner').findOne({ user: req.user._id });
                 if (!owner) return res.status(200).json({ success: true, count: 0, data: [], pagination: {} });
                 
@@ -25,11 +25,24 @@ exports.getUnits = async (req, res, next) => {
                 const assignedFloors = await mongoose.model('Floor').find({ assignedOwner: owner._id });
                 const floorIds = assignedFloors.map(f => f._id);
                 reqQuery.floor = { $in: floorIds };
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 // Find floors assigned to this admin
                 const assignedFloors = await mongoose.model('Floor').find({ assignedAdmin: req.user._id });
                 const floorIds = assignedFloors.map(f => f._id);
                 reqQuery.floor = { $in: floorIds };
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                const assignedProps = req.user.assignedProperties || [];
+                const assignedFloors = req.user.assignedFloors || [];
+                if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                    return res.status(200).json({ success: true, count: 0, data: [], pagination: {} });
+                }
+                reqQuery.$or = [];
+                if (assignedProps.length > 0) {
+                    reqQuery.$or.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    reqQuery.$or.push({ floor: { $in: assignedFloors } });
+                }
             }
         }
 
@@ -123,7 +136,7 @@ exports.getUnits = async (req, res, next) => {
                     const assignedUser = await User.findOne({
                         assignedUnits: unit._id,
                         agreementStatus: { $in: ['Active', 'Pending'] },
-                        role: { $in: ['Office Owner', 'Owner'] }
+                        role: { $in: ['OFFICE_OWNER', 'Owner'] }
                     });
                     if (assignedUser) {
                         let recoveredOwner = await Owner.findOne({ user: assignedUser._id });
@@ -226,7 +239,7 @@ exports.getUnits = async (req, res, next) => {
                     const assignedUser = await User.findOne({
                         assignedUnits: unit._id,
                         agreementStatus: { $in: ['Active', 'Pending'] },
-                        role: { $in: ['Office Owner', 'Owner'] }
+                        role: { $in: ['OFFICE_OWNER', 'Owner'] }
                     });
                     if (assignedUser) {
                         let recoveredOwner = await Owner.findOne({ user: assignedUser._id });
@@ -287,6 +300,16 @@ exports.getUnit = async (req, res, next) => {
 
         if (!unit) {
             return res.status(404).json({ success: false, error: 'Unit not found' });
+        }
+
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = (req.user.assignedFloors || []).map(id => id.toString());
+            const isPropAssigned = assignedProps.includes(unit.property?._id?.toString() || unit.property?.toString());
+            const isFloorAssigned = assignedFloors.includes(unit.floor?._id?.toString() || unit.floor?.toString());
+            if (!isPropAssigned && !isFloorAssigned) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this unit' });
+            }
         }
 
         // Self-heal lease if not set but unit is associated with active lease

@@ -15,12 +15,12 @@ router.use(protect);
 router
     .route('/')
     .get(getUnits)
-    .post(authorize('Super Admin', 'Floor Admin'), createUnit);
+    .post(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), createUnit);
 
 router
     .route('/:id')
     .get(getUnit)
-    .put(authorize('Super Admin', 'Floor Admin'), updateUnit)
-    .delete(authorize('Super Admin', 'Floor Admin'), deleteUnit);
+    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), updateUnit)
+    .delete(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), deleteUnit);
 
 module.exports = router;

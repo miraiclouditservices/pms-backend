@@ -16,17 +16,17 @@ router.use(protect);
 router
     .route('/')
     .get(getMaterials)
-    .post(authorize('Super Admin', 'Staff Admin'), createMaterial);
+    .post(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), createMaterial);
 
 router
     .route('/:id')
     .get(getMaterial)
-    .put(authorize('Super Admin', 'Staff Admin'), updateMaterial)
-    .delete(authorize('Super Admin'), deleteMaterial);
+    .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateMaterial)
+    .delete(authorize('SUPER_ADMIN'), deleteMaterial);
 
 // Approve / Reject gate pass
 router
     .route('/:id/approve')
-    .patch(authorize('Super Admin', 'Staff Admin', 'Floor Admin', 'Office Owner'), approveGatePass);
+    .patch(authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER'), approveGatePass);
 
 module.exports = router;

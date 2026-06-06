@@ -21,9 +21,9 @@ const runBookingScheduler = async () => {
         for (const booking of startingBookings) {
             const roomName = booking.meetingRoom ? booking.meetingRoom.roomName : 'Meeting Room';
             
-            // Find Floor Admins & Office Owners of that floor
-            const floorAdmins = await User.find({ role: 'Floor Admin', assignedFloors: booking.floor });
-            const officeOwners = await User.find({ role: 'Office Owner', assignedFloors: booking.floor });
+            // Find FLOOR_ADMINs & OFFICE_OWNERs of that floor
+            const floorAdmins = await User.find({ role: 'FLOOR_ADMIN', assignedFloors: booking.floor });
+            const officeOwners = await User.find({ role: 'OFFICE_OWNER', assignedFloors: booking.floor });
             const bookerUser = booking.bookedByUser ? await User.findById(booking.bookedByUser) : null;
 
             const recipients = [...floorAdmins, ...officeOwners];
@@ -58,9 +58,9 @@ const runBookingScheduler = async () => {
         for (const booking of endingBookings) {
             const roomName = booking.meetingRoom ? booking.meetingRoom.roomName : 'Meeting Room';
             
-            // Find Floor Admins & Office Owners of that floor
-            const floorAdmins = await User.find({ role: 'Floor Admin', assignedFloors: booking.floor });
-            const officeOwners = await User.find({ role: 'Office Owner', assignedFloors: booking.floor });
+            // Find FLOOR_ADMINs & OFFICE_OWNERs of that floor
+            const floorAdmins = await User.find({ role: 'FLOOR_ADMIN', assignedFloors: booking.floor });
+            const officeOwners = await User.find({ role: 'OFFICE_OWNER', assignedFloors: booking.floor });
             const bookerUser = booking.bookedByUser ? await User.findById(booking.bookedByUser) : null;
 
             const recipients = [...floorAdmins, ...officeOwners];

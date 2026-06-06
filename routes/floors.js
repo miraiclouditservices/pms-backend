@@ -9,11 +9,11 @@ router.use(protect);
 
 router.route('/')
     .get(getFloors)
-    .post(authorize('Super Admin'), createFloor);
+    .post(authorize('SUPER_ADMIN'), createFloor);
 
 router.route('/:id')
     .get(getFloor)
-    .put(authorize('Super Admin'), updateFloor)
-    .delete(authorize('Super Admin'), deleteFloor);
+    .put(authorize('SUPER_ADMIN'), updateFloor)
+    .delete(authorize('SUPER_ADMIN'), deleteFloor);
 
 module.exports = router;

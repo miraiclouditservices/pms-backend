@@ -7,9 +7,11 @@ exports.getUsers = async (req, res, next) => {
     try {
         let query = {};
         if (req.user) {
-            if (req.user.role === 'Office Owner' || req.user.role === 'Owner') {
+            if (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner') {
                 query._id = req.user._id;
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                query._id = req.user._id;
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 const Floor = require('../models/Floor');
                 const Unit = require('../models/Unit');
                 const floors = await Floor.find({ assignedAdmin: req.user._id });
@@ -17,7 +19,7 @@ exports.getUsers = async (req, res, next) => {
                 const propertyIds = floors.map(f => f.property).filter(Boolean);
                 const units = await Unit.find({ floor: { $in: fIds } }).select('_id');
                 const unitIds = units.map(u => u._id);
-                
+
                 query = {
                     $or: [
                         { _id: req.user._id },
@@ -47,6 +49,10 @@ exports.getUser = async (req, res, next) => {
         if (!user) {
             return res.status(404).json({ success: false, error: 'User not found' });
         }
+        
+        if (req.user && req.user.role === 'STAFF_ADMIN' && req.params.id !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, error: 'Not authorized to view this user profile' });
+        }
         res.status(200).json({
             success: true,
             data: user
@@ -56,13 +62,26 @@ exports.getUser = async (req, res, next) => {
     }
 };
 
+// Role hierarchy checker for creation and role assignment
+const checkHierarchy = (currentUserRole, targetRole) => {
+    if (currentUserRole === 'SUPER_ADMIN') return true;
+    if (currentUserRole === 'OFFICE_OWNER' && targetRole === 'FLOOR_ADMIN') return true;
+    if (currentUserRole === 'FLOOR_ADMIN' && targetRole === 'STAFF_ADMIN') return true;
+    return false;
+};
+
 // @desc    Create user
 // @route   POST /api/users
 // @access  Private/Admin
 exports.createUser = async (req, res, next) => {
     try {
-        // PRE-VALIDATION: Check if any assigned floor is already taken (only for Floor Admins)
-        if (req.body.role === 'Floor Admin' && req.body.assignedFloors && req.body.assignedFloors.length > 0) {
+        const { role } = req.body;
+        if (req.user && role && !checkHierarchy(req.user.role, role)) {
+            return res.status(403).json({ success: false, error: 'Authorization Error: You do not have permission to create a user with this role.' });
+        }
+
+        // PRE-VALIDATION: Check if any assigned floor is already taken (only for FLOOR_ADMINs)
+        if (req.body.role === 'FLOOR_ADMIN' && req.body.assignedFloors && req.body.assignedFloors.length > 0) {
             const Floor = require('../models/Floor');
             const takenFloors = await Floor.find({
                 _id: { $in: req.body.assignedFloors },
@@ -70,21 +89,21 @@ exports.createUser = async (req, res, next) => {
             });
 
             if (takenFloors.length > 0) {
-                return res.status(400).json({ 
-                    success: false, 
-                    error: `Validation Error: One or more selected floors are already assigned to another Floor Admin.` 
+                return res.status(400).json({
+                    success: false,
+                    error: `Validation Error: One or more selected floors are already assigned to another FLOOR_ADMIN.`
                 });
             }
         }
 
-        // PRE-VALIDATION: Prevent Floor Admins from assigning properties/floors/units outside their management
-        if (req.user && req.user.role === 'Floor Admin') {
+        // PRE-VALIDATION: Prevent FLOOR_ADMINs from assigning properties/floors/units outside their management
+        if (req.user && req.user.role === 'FLOOR_ADMIN') {
             const Floor = require('../models/Floor');
             const Unit = require('../models/Unit');
             const floors = await Floor.find({ assignedAdmin: req.user._id });
             const fIds = floors.map(f => f._id.toString());
             const propertyIds = floors.map(f => f.property?.toString()).filter(Boolean);
-            
+
             if (req.body.assignedFloors && req.body.assignedFloors.length > 0) {
                 const invalidFloors = req.body.assignedFloors.filter(fid => !fIds.includes(fid.toString()));
                 if (invalidFloors.length > 0) {
@@ -107,23 +126,23 @@ exports.createUser = async (req, res, next) => {
         }
 
         const user = await User.create(req.body);
-        
+
         // Create welcome/assignment notification for the provisioned user
-        if (user.role === 'Floor Admin' || user.role === 'Office Owner') {
+        if (user.role === 'FLOOR_ADMIN' || user.role === 'OFFICE_OWNER') {
             const Notification = require('../models/Notification');
             const formattedStart = user.floorAssignmentStartDate ? new Date(user.floorAssignmentStartDate).toLocaleDateString() : 'N/A';
             const formattedEnd = user.floorAssignmentEndDate ? new Date(user.floorAssignmentEndDate).toLocaleDateString() : 'N/A';
-            
+
             await Notification.create({
                 user: user._id,
-                title: user.role === 'Floor Admin' ? 'Floor Assignment Activated' : 'Office Agreement Activated',
+                title: user.role === 'FLOOR_ADMIN' ? 'Floor Assignment Activated' : 'Office Agreement Activated',
                 message: `Hello ${user.name}, your account has been provisioned as ${user.role}. Your assignment is active from ${formattedStart} to ${formattedEnd}. Monthly Management Amount: ₹${user.monthlyManagementAmount || 0}.`,
                 type: 'Info'
             });
         }
-        
+
         // Handle Role-based Profile Creation and Floor Assignments
-        if (user.role === 'Office Owner' || user.role === 'Owner') {
+        if (user.role === 'OFFICE_OWNER' || user.role === 'Owner') {
             const Owner = require('../models/Owner');
             const newOwner = await Owner.create({
                 ownerName: user.name,
@@ -133,7 +152,7 @@ exports.createUser = async (req, res, next) => {
                 user: user._id
             });
 
-            // Note: We do NOT assign Floor.assignedOwner for Office Owners since multiple Office Owners can occupy a Floor.
+            // Note: We do NOT assign Floor.assignedOwner for OFFICE_OWNERs since multiple OFFICE_OWNERs can occupy a Floor.
             // Floor.assignedOwner is reserved for whole-floor ownership.
 
             // Assign units to this newly created owner
@@ -148,7 +167,7 @@ exports.createUser = async (req, res, next) => {
                     });
                 }
             }
-        } else if (user.role === 'Floor Admin') {
+        } else if (user.role === 'FLOOR_ADMIN') {
             if (req.body.assignedFloors && req.body.assignedFloors.length > 0) {
                 const Floor = require('../models/Floor');
                 for (const floorId of req.body.assignedFloors) {
@@ -176,7 +195,7 @@ exports.createUser = async (req, res, next) => {
             } else if (err.message && err.message.includes('phoneNumber')) {
                 field = 'phoneNumber';
             }
-            
+
             let message = 'A duplicate record already exists in our database.';
             if (field === 'email') {
                 message = 'The email address you entered is already registered with another account.';
@@ -199,6 +218,13 @@ exports.updateUser = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'User not found' });
         }
 
+        // Check hierarchy if role is being updated
+        if (req.user && req.body.role && req.body.role !== user.role) {
+            if (!checkHierarchy(req.user.role, req.body.role)) {
+                return res.status(403).json({ success: false, error: 'Authorization Error: You do not have permission to assign this role.' });
+            }
+        }
+
         const oldAssignedFloors = user.assignedFloors || [];
         const oldAssignedUnits = user.assignedUnits || [];
 
@@ -208,10 +234,10 @@ exports.updateUser = async (req, res, next) => {
             runValidators: true
         });
 
-        // Sync floor and unit assignments for Floor Admin
-        if (user.role === 'Floor Admin') {
+        // Sync floor and unit assignments for FLOOR_ADMIN
+        if (user.role === 'FLOOR_ADMIN') {
             const Floor = require('../models/Floor');
-            
+
             // Clear old floors
             if (oldAssignedFloors.length > 0) {
                 await Floor.updateMany(
@@ -229,8 +255,8 @@ exports.updateUser = async (req, res, next) => {
             }
         }
 
-        // Sync for Office Owner
-        if (user.role === 'Office Owner' || user.role === 'Owner') {
+        // Sync for OFFICE_OWNER
+        if (user.role === 'OFFICE_OWNER' || user.role === 'Owner') {
             const Owner = require('../models/Owner');
             let ownerProfile = await Owner.findOne({ user: user._id });
             if (!ownerProfile) {
@@ -248,7 +274,7 @@ exports.updateUser = async (req, res, next) => {
                 await ownerProfile.save();
             }
 
-            // Note: We do NOT assign Floor.assignedOwner for Office Owners since multiple Office Owners can occupy a Floor.
+            // Note: We do NOT assign Floor.assignedOwner for OFFICE_OWNERs since multiple OFFICE_OWNERs can occupy a Floor.
 
             const Unit = require('../models/Unit');
             // Clear old units
@@ -293,7 +319,7 @@ exports.updateUser = async (req, res, next) => {
             } else if (err.message && err.message.includes('phoneNumber')) {
                 field = 'phoneNumber';
             }
-            
+
             let message = 'A duplicate record already exists in our database.';
             if (field === 'email') {
                 message = 'The email address you entered is already registered with another account.';
@@ -316,6 +342,13 @@ exports.deleteUser = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'User not found' });
         }
 
+        // Authorization check for deletion
+        if (req.user && user.role) {
+            if (req.user.role !== 'SUPER_ADMIN' && !checkHierarchy(req.user.role, user.role)) {
+                return res.status(403).json({ success: false, error: 'Authorization Error: You do not have permission to delete this user.' });
+            }
+        }
+
         // Clean up assignments
         const Floor = require('../models/Floor');
         await Floor.updateMany({ assignedAdmin: user._id }, { assignedAdmin: null });
@@ -324,7 +357,7 @@ exports.deleteUser = async (req, res, next) => {
         const ownerProfile = await Owner.findOne({ user: user._id });
         if (ownerProfile) {
             await Floor.updateMany({ assignedOwner: ownerProfile._id }, { assignedOwner: null });
-            
+
             const Unit = require('../models/Unit');
             await Unit.updateMany({ owner: ownerProfile._id }, { owner: null, ownerName: '', unitStatus: 'Available' });
 
@@ -335,6 +368,98 @@ exports.deleteUser = async (req, res, next) => {
         res.status(200).json({
             success: true,
             data: {}
+        });
+    } catch (err) {
+        res.status(400).json({ success: false, error: err.message });
+    }
+};
+
+// @desc    Get user billing info (invoices & summary)
+// @route   GET /api/users/:id/billing
+// @access  Private/Admin
+exports.getUserBilling = async (req, res, next) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const Finance = require('../models/Finance');
+        const Payment = require('../models/Payment');
+        const Lease = require('../models/Lease');
+
+        let leaseQuery = {};
+        if (user.role === 'Tenant') {
+            const Tenant = require('../models/Tenant');
+            const tenant = await Tenant.findOne({ user: user._id });
+            if (tenant && tenant.lease) {
+                leaseQuery._id = tenant.lease;
+            } else {
+                leaseQuery = { $or: [{ tenantEmail: user.email }, { tenantContact: user.phoneNumber }] };
+            }
+        } else if (user.role === 'FLOOR_ADMIN') {
+            leaseQuery.floor = { $in: user.assignedFloors || [] };
+        } else if (user.role === 'OFFICE_OWNER' || user.role === 'Owner') {
+            leaseQuery.units = { $in: user.assignedUnits || [] };
+        } else {
+            leaseQuery._id = null;
+        }
+
+        const leases = await Lease.find({
+            $or: [
+                leaseQuery,
+                { tenantName: user.name },
+                { tenantEmail: user.email }
+            ]
+        });
+        const leaseIds = leases.map(l => l._id);
+
+        // Fetch real invoices matching this user context
+        const invoices = await Finance.find({
+            $or: [
+                { lease: { $in: leaseIds } },
+                { floor: { $in: user.assignedFloors || [] } },
+                { tenantName: user.name }
+            ]
+        }).sort('-createdAt');
+
+        // Fetch real payments matching this user context
+        const payments = await Payment.find({
+            lease: { $in: leaseIds }
+        }).sort('-createdAt');
+
+        const mappedInvoices = invoices.map(inv => {
+            const isPaid = inv.status === 'Paid';
+            const matchedPayment = payments.find(p => p.lease.toString() === inv.lease?.toString() && p.month === inv.month && p.year === inv.year);
+            
+            return {
+                invoiceId: inv.invoiceNumber || `INV-${inv.year}-${inv.month.slice(0,3).toUpperCase()}`,
+                billingPeriod: `${inv.month} ${inv.year}`,
+                amount: inv.totalAmount || 0,
+                dueDate: inv.dueDate,
+                paidDate: matchedPayment ? matchedPayment.paymentDate : (isPaid ? inv.createdAt : null),
+                status: inv.status,
+                receiptUrl: '#'
+            };
+        });
+
+        // Compute dynamic summary sums
+        const totalBilled = mappedInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+        const totalPaid = mappedInvoices.filter(inv => inv.status === 'Paid').reduce((sum, inv) => sum + inv.amount, 0);
+        const pendingAmount = mappedInvoices.filter(inv => inv.status === 'Pending').reduce((sum, inv) => sum + inv.amount, 0);
+        const overdueAmount = mappedInvoices.filter(inv => inv.status === 'Overdue').reduce((sum, inv) => sum + inv.amount, 0);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                invoices: mappedInvoices,
+                summary: {
+                    totalBilled,
+                    totalPaid,
+                    pendingAmount,
+                    overdueAmount
+                }
+            }
         });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });

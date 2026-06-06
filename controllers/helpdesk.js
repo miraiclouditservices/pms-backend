@@ -10,7 +10,7 @@ exports.getTickets = async (req, res, next) => {
                 const tenant = await require('mongoose').model('Tenant').findOne({ user: req.user._id });
                 if (!tenant) return res.status(200).json({ success: true, count: 0, data: [] });
                 query.tenant = tenant._id;
-            } else if (req.user.role === 'Owner' || req.user.role === 'Office Owner') {
+            } else if (req.user.role === 'Owner' || req.user.role === 'OFFICE_OWNER') {
                 const user = await require('../models/User').findById(req.user.id);
                 const assignedUnits = user?.assignedUnits || [];
                 
@@ -35,7 +35,7 @@ exports.getTickets = async (req, res, next) => {
                         { createdBy: req.user._id }
                     ]
                 };
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 const Floor = require('../models/Floor');
                 const Lease = require('../models/Lease');
                 const Tenant = require('../models/Tenant');
@@ -48,6 +48,29 @@ exports.getTickets = async (req, res, next) => {
                 const tenantIds = tenants.map(t => t._id);
                 
                 query.tenant = { $in: tenantIds };
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                const Floor = require('../models/Floor');
+                const Lease = require('../models/Lease');
+                const Tenant = require('../models/Tenant');
+                const assignedProps = req.user.assignedProperties || [];
+                const assignedFloors = req.user.assignedFloors || [];
+                
+                if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                    query.tenant = { $in: [] };
+                } else {
+                    const orConditions = [];
+                    if (assignedProps.length > 0) {
+                        orConditions.push({ property: { $in: assignedProps } });
+                    }
+                    if (assignedFloors.length > 0) {
+                        orConditions.push({ floor: { $in: assignedFloors } });
+                    }
+                    const leases = await Lease.find({ $or: orConditions });
+                    const leaseIds = leases.map(l => l._id);
+                    const tenants = await Tenant.find({ lease: { $in: leaseIds } });
+                    const tenantIds = tenants.map(t => t._id);
+                    query.tenant = { $in: tenantIds };
+                }
             }
         }
 
@@ -92,7 +115,7 @@ exports.getHelpdeskStats = async (req, res, next) => {
                 const tenant = await require('mongoose').model('Tenant').findOne({ user: req.user._id });
                 if (!tenant) return res.status(200).json({ success: true, data: { total: 0, open: 0, inProgress: 0, resolved: 0, closed: 0 } });
                 matchQuery.tenant = tenant._id;
-            } else if (req.user.role === 'Owner' || req.user.role === 'Office Owner') {
+            } else if (req.user.role === 'Owner' || req.user.role === 'OFFICE_OWNER') {
                 const user = await require('../models/User').findById(req.user.id);
                 const assignedUnits = user?.assignedUnits || [];
                 const Lease = require('../models/Lease');
@@ -107,7 +130,7 @@ exports.getHelpdeskStats = async (req, res, next) => {
                 });
                 const tenantIds = tenants.map(t => t._id);
                 matchQuery.tenant = { $in: tenantIds };
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 const Floor = require('../models/Floor');
                 const Lease = require('../models/Lease');
                 const Tenant = require('../models/Tenant');
@@ -118,6 +141,29 @@ exports.getHelpdeskStats = async (req, res, next) => {
                 const tenants = await Tenant.find({ lease: { $in: leaseIds } });
                 const tenantIds = tenants.map(t => t._id);
                 matchQuery.tenant = { $in: tenantIds };
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                const Floor = require('../models/Floor');
+                const Lease = require('../models/Lease');
+                const Tenant = require('../models/Tenant');
+                const assignedProps = req.user.assignedProperties || [];
+                const assignedFloors = req.user.assignedFloors || [];
+                
+                if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                    matchQuery.tenant = { $in: [] };
+                } else {
+                    const orConditions = [];
+                    if (assignedProps.length > 0) {
+                        orConditions.push({ property: { $in: assignedProps } });
+                    }
+                    if (assignedFloors.length > 0) {
+                        orConditions.push({ floor: { $in: assignedFloors } });
+                    }
+                    const leases = await Lease.find({ $or: orConditions });
+                    const leaseIds = leases.map(l => l._id);
+                    const tenants = await Tenant.find({ lease: { $in: leaseIds } });
+                    const tenantIds = tenants.map(t => t._id);
+                    matchQuery.tenant = { $in: tenantIds };
+                }
             }
         }
 

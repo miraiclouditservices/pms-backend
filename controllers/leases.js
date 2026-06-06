@@ -42,7 +42,7 @@ exports.getLeases = async (req, res, next) => {
         
         // Data isolation filter for Floor Assignments
         if (req.user) {
-            if (req.user.role === 'Office Owner' || req.user.role === 'Owner') {
+            if (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner') {
                 if (req.user.assignedUnits && req.user.assignedUnits.length > 0) {
                     query.units = { $in: req.user.assignedUnits };
                 } else {
@@ -54,11 +54,24 @@ exports.getLeases = async (req, res, next) => {
                     const floorIds = assignedFloors.map(f => f._id);
                     query.floor = { $in: floorIds };
                 }
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 // Find floors assigned to this admin
                 const assignedFloors = await Floor.find({ assignedAdmin: req.user._id });
                 const floorIds = assignedFloors.map(f => f._id);
                 query.floor = { $in: floorIds };
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                const assignedProps = req.user.assignedProperties || [];
+                const assignedFloors = req.user.assignedFloors || [];
+                if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                    return res.status(200).json({ success: true, total: 0, pagination: { page, limit, totalPages: 0 }, data: [] });
+                }
+                query.$or = [];
+                if (assignedProps.length > 0) {
+                    query.$or.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    query.$or.push({ floor: { $in: assignedFloors } });
+                }
             }
         }
 
@@ -110,6 +123,16 @@ exports.getLease = async (req, res, next) => {
 
         if (!lease) {
             return res.status(404).json({ success: false, error: 'Lease not found' });
+        }
+
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = (req.user.assignedFloors || []).map(id => id.toString());
+            const isPropAssigned = assignedProps.includes(lease.property?._id?.toString() || lease.property?.toString());
+            const isFloorAssigned = assignedFloors.includes(lease.floor?._id?.toString() || lease.floor?.toString());
+            if (!isPropAssigned && !isFloorAssigned) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this lease' });
+            }
         }
 
         res.status(200).json({

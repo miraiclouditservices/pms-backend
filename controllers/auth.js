@@ -18,15 +18,15 @@ exports.register = async (req, res, next) => {
         const userCount = await User.countDocuments();
 
         // 3. Authorization Logic (Bypassed per user request)
-        // Anyone who creates an account via the register route will become a Super Admin.
+        // Anyone who creates an account via the register route will become a SUPER_ADMIN.
 
         // 4. Create User
-        // Whoever registers through this endpoint becomes a Super Admin
+        // Whoever registers through this endpoint becomes a SUPER_ADMIN
         const user = await User.create({
             name,
             email,
             password,
-            role: 'Super Admin'
+            role: 'SUPER_ADMIN'
         });
 
         // 5. Response Logic
@@ -42,7 +42,7 @@ exports.register = async (req, res, next) => {
 // @access  Public
 exports.login = async (req, res, next) => {
     try {
-        const { email, password, role } = req.body;
+        const { email, password } = req.body; // DO NOT require role selection from frontend
 
         // Validate email & password
         if (!email || !password) {
@@ -50,16 +50,31 @@ exports.login = async (req, res, next) => {
         }
 
         // Check for user
-        const user = await User.findOne({ email }).select('+password');
+        const user = await User.findOne({ email }).select('+password')
+            .populate({
+                path: 'assignedProperties',
+                select: 'propertyName address propertyAddress'
+            })
+            .populate({
+                path: 'assignedFloors',
+                select: 'floorNumber floorName property'
+            })
+            .populate({
+                path: 'assignedUnits',
+                select: 'unitNumber unitType unitStatus sqft carParking bikeParking floor property',
+                populate: [
+                    { path: 'property', select: 'propertyName' },
+                    { path: 'floor', select: 'floorName floorNumber' }
+                ]
+            });
 
         if (!user) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
 
-        // Check if role matches if provided (for tab-based login verification)
-        // Super Admin can bypass any tab check
-        if (role && user.role !== role && user.role !== 'Super Admin') {
-            return res.status(401).json({ success: false, error: `Unauthorized: User is not registered as ${role}` });
+        // Check if account is active (fallback to true if field is missing)
+        if (user.isActive === false || user.agreementStatus === 'Suspended') {
+            return res.status(401).json({ success: false, error: 'Account is inactive' });
         }
 
         // Check if password matches
@@ -69,18 +84,56 @@ exports.login = async (req, res, next) => {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
 
-        // Additional check for Owners: Ensure they have an Owner profile
-        if (role === 'Office Owner' || user.role === 'Office Owner') {
-            const Owner = require('../models/Owner');
-            const ownerProfile = await Owner.findOne({ user: user._id });
-            if (!ownerProfile && user.role !== 'Super Admin') {
-                return res.status(403).json({ success: false, error: 'Owner profile not found. Please contact support.' });
-            }
-        }
+        // Create token
+        const token = user.getSignedJwtToken();
 
-        sendTokenResponse(user, 200, res);
+        // Normalize legacy database roles to ALL_CAPS for the frontend
+        let responseRole = user.role;
+        if (user.role === 'Super Admin' || user.role === 'SUPER_ADMIN') responseRole = 'SUPER_ADMIN';
+        if (user.role === 'Office Owner' || user.role === 'OFFICE_OWNER') responseRole = 'OFFICE_OWNER';
+        if (user.role === 'Floor Admin' || user.role === 'FLOOR_ADMIN') responseRole = 'FLOOR_ADMIN';
+        if (user.role === 'Staff Admin' || user.role === 'STAFF_ADMIN') responseRole = 'STAFF_ADMIN';
+
+        res.status(200).json({
+            success: true,
+            message: 'Login successful',
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: responseRole,
+                permissions: user.permissions || [],
+                assignedProperties: user.assignedProperties || [],
+                assignedFloors: user.assignedFloors || [],
+                assignedUnits: user.assignedUnits || []
+            }
+        });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
+    }
+};
+
+exports.logout = async (req, res, next) => {
+    res.status(200).json({
+        success: true,
+        message: 'Logout successful'
+    });
+};
+
+exports.refreshToken = async (req, res, next) => {
+    try {
+        const { token } = req.body;
+        if (!token) return res.status(400).json({ success: false, error: 'Token is required' });
+        
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { ignoreExpiration: true });
+        const user = await User.findById(decoded.id);
+        if (!user || user.isActive === false) return res.status(401).json({ success: false, error: 'Invalid token or inactive user' });
+
+        const newToken = user.getSignedJwtToken();
+        res.status(200).json({ success: true, token: newToken });
+    } catch (err) {
+        res.status(401).json({ success: false, error: 'Invalid token' });
     }
 };
 
@@ -102,49 +155,49 @@ const sendTokenResponse = (user, statusCode, res) => {
     });
 };
 
-exports.getMe = async (req, res, next) => {
+// Replaced getMe with profile route mapping
+exports.getProfile = async (req, res, next) => {
     try {
         const user = await User.findById(req.user.id)
-            .populate('assignedProperties')
-            .populate('assignedFloors')
+            .populate({
+                path: 'assignedProperties',
+                select: 'propertyName address propertyAddress'
+            })
+            .populate({
+                path: 'assignedFloors',
+                select: 'floorNumber floorName property'
+            })
             .populate({
                 path: 'assignedUnits',
+                select: 'unitNumber unitType unitStatus sqft carParking bikeParking floor property',
                 populate: [
-                    { path: 'property' },
-                    { path: 'floor' }
+                    { path: 'property', select: 'propertyName' },
+                    { path: 'floor', select: 'floorName floorNumber' }
                 ]
             });
-
-        let ownerProfile = null;
-        let activeLeases = [];
         
-        if (user.role === 'Owner' || user.role === 'Office Owner') {
-            const Owner = require('../models/Owner');
-            ownerProfile = await Owner.findOne({ user: user._id })
-                .populate({
-                    path: 'unitsAssigned',
-                    populate: [
-                        { path: 'property' },
-                        { path: 'floor' }
-                    ]
-                });
-        }
-
-        if (user.assignedUnits && user.assignedUnits.length > 0) {
-            const Lease = require('../models/Lease');
-            activeLeases = await Lease.find({ units: { $in: user.assignedUnits } })
-                .populate('property')
-                .populate('floor')
-                .populate('units');
-        }
+        let responseRole = user.role;
+        if (user.role === 'SUPER_ADMIN') responseRole = 'SUPER_ADMIN';
+        if (user.role === 'OFFICE_OWNER') responseRole = 'OFFICE_OWNER';
+        if (user.role === 'FLOOR_ADMIN') responseRole = 'FLOOR_ADMIN';
+        if (user.role === 'STAFF_ADMIN') responseRole = 'STAFF_ADMIN';
 
         res.status(200).json({
             success: true,
-            data: user,
-            ownerProfile,
-            activeLeases
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: responseRole,
+                isActive: user.isActive !== false,
+                permissions: user.permissions || [],
+                assignedProperties: user.assignedProperties || [],
+                assignedFloors: user.assignedFloors || [],
+                assignedUnits: user.assignedUnits || [],
+                createdAt: user.createdAt
+            }
         });
     } catch (err) {
-        res.status(400).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: err.message });
     }
 };

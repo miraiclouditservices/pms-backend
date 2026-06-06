@@ -30,7 +30,7 @@ exports.getMaterials = async (req, res) => {
     try {
         let query = {};
 
-        if (req.user && (req.user.role === 'Owner' || req.user.role === 'Office Owner')) {
+        if (req.user && (req.user.role === 'Owner' || req.user.role === 'OFFICE_OWNER')) {
             const user = await User.findById(req.user.id);
             const assignedUnits = user?.assignedUnits || [];
             
@@ -40,10 +40,24 @@ exports.getMaterials = async (req, res) => {
                     { createdBy: req.user._id }
                 ]
             };
-        } else if (req.user && req.user.role === 'Floor Admin') {
+        } else if (req.user && req.user.role === 'FLOOR_ADMIN') {
             const floors = await Floor.find({ assignedAdmin: req.user._id });
             const fIds = floors.map(f => f._id);
             query = { floor: { $in: fIds } };
+        } else if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                query = { _id: null };
+            } else {
+                query.$or = [];
+                if (assignedProps.length > 0) {
+                    query.$or.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    query.$or.push({ floor: { $in: assignedFloors } });
+                }
+            }
         }
 
         const data = await Material.find(query).populate(POPULATE).sort('-createdAt');
@@ -58,6 +72,16 @@ exports.getMaterial = async (req, res) => {
     try {
         const data = await Material.findById(req.params.id).populate(POPULATE);
         if (!data) return res.status(404).json({ success: false, error: 'Gate pass not found' });
+
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = (req.user.assignedFloors || []).map(id => id.toString());
+            const isPropAssigned = assignedProps.includes(data.property?._id?.toString() || data.property?.toString());
+            const isFloorAssigned = assignedFloors.includes(data.floor?._id?.toString() || data.floor?.toString());
+            if (!isPropAssigned && !isFloorAssigned) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this gate pass record' });
+            }
+        }
         res.status(200).json({ success: true, data });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -104,29 +128,29 @@ exports.createMaterial = async (req, res, next) => {
                 const unit = await Unit.findById(unitId).populate('owner');
                 if (unit?.owner?.user) {
                     recipientUserId = unit.owner.user;
-                    authorityLabel  = `Office Owner (Unit ${unit.unitNumber})`;
+                    authorityLabel  = `OFFICE_OWNER (Unit ${unit.unitNumber})`;
                 }
             } else if (resolvedLevel === 'Floor Level' && floorId) {
                 // Notify the floor admin
                 const floor = await Floor.findById(floorId);
                 if (floor?.assignedAdmin) {
                     recipientUserId = floor.assignedAdmin;
-                    authorityLabel  = `Floor Admin (Floor ${floor.floorNumber})`;
+                    authorityLabel  = `FLOOR_ADMIN (Floor ${floor.floorNumber})`;
                 } else if (floor?.assignedOwner) {
                     const owner = await require('../models/Owner').findById(floor.assignedOwner);
                     recipientUserId = owner?.user;
                     authorityLabel  = `Floor Owner (Floor ${floor.floorNumber})`;
                 }
             } else if (resolvedLevel === 'Property Level' && propertyId) {
-                // Notify Super Admin or Property Creator
+                // Notify SUPER_ADMIN or Property Creator
                 const property = await Property.findById(propertyId).populate('createdBy');
                 recipientUserId = property?.createdBy?._id || property?.createdBy;
                 authorityLabel  = `Property Owner (${property?.propertyName})`;
             }
 
-            // Fallback: notify all Super Admins
+            // Fallback: notify all SUPER_ADMINs
             if (!recipientUserId) {
-                const superAdmins = await User.find({ role: 'Super Admin' }).select('_id');
+                const superAdmins = await User.find({ role: 'SUPER_ADMIN' }).select('_id');
                 for (const admin of superAdmins) {
                     await Notification.create({
                         user: admin._id,

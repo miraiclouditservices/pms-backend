@@ -15,12 +15,12 @@ router.use(protect);
 router
     .route('/')
     .get(getBookings)
-    .post(authorize('Super Admin', 'Office Owner', 'Staff Admin'), createBooking);
+    .post(authorize('SUPER_ADMIN', 'OFFICE_OWNER', 'STAFF_ADMIN'), createBooking);
 
 router
     .route('/:id')
     .get(getBooking)
-    .put(authorize('Super Admin', 'Office Owner', 'Staff Admin'), updateBooking)
-    .delete(authorize('Super Admin'), deleteBooking);
+    .put(authorize('SUPER_ADMIN', 'OFFICE_OWNER', 'STAFF_ADMIN'), updateBooking)
+    .delete(authorize('SUPER_ADMIN'), deleteBooking);
 
 module.exports = router;

@@ -11,7 +11,7 @@ exports.getProperties = async (req, res, next) => {
         let query;
         
         // Data isolation based on Floor Assignments
-        if (req.user && (req.user.role === 'Office Owner' || req.user.role === 'Owner')) {
+        if (req.user && (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner')) {
             const owner = await Owner.findOne({ user: req.user._id });
             if (owner) {
                 const assignedFloors = await mongoose.model('Floor').find({ assignedOwner: owner._id });
@@ -24,11 +24,29 @@ exports.getProperties = async (req, res, next) => {
             } else {
                 return res.status(200).json({ success: true, count: 0, data: [] });
             }
-        } else if (req.user && req.user.role === 'Floor Admin') {
+        } else if (req.user && req.user.role === 'FLOOR_ADMIN') {
             const assignedFloors = await mongoose.model('Floor').find({ assignedAdmin: req.user._id });
             if (assignedFloors.length > 0) {
                 const propertyIds = [...new Set(assignedFloors.map(f => f.property.toString()))];
                 query = Property.find({ _id: { $in: propertyIds } });
+            } else {
+                return res.status(200).json({ success: true, count: 0, data: [] });
+            }
+        } else if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            const propertyIds = [];
+            if (assignedProps.length > 0) {
+                propertyIds.push(...assignedProps.map(p => p.toString()));
+            }
+            if (assignedFloors.length > 0) {
+                const floors = await mongoose.model('Floor').find({ _id: { $in: assignedFloors } });
+                const floorPropIds = floors.map(f => f.property.toString());
+                propertyIds.push(...floorPropIds);
+            }
+            const uniqueIds = [...new Set(propertyIds)];
+            if (uniqueIds.length > 0) {
+                query = Property.find({ _id: { $in: uniqueIds } });
             } else {
                 return res.status(200).json({ success: true, count: 0, data: [] });
             }
@@ -57,6 +75,20 @@ exports.getProperty = async (req, res, next) => {
 
         if (!property) {
             return res.status(404).json({ success: false, error: 'Property not found' });
+        }
+
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = req.user.assignedFloors || [];
+            const allowedProps = [...assignedProps];
+            if (assignedFloors.length > 0) {
+                const floors = await mongoose.model('Floor').find({ _id: { $in: assignedFloors } });
+                allowedProps.push(...floors.map(f => f.property.toString()));
+            }
+            const uniqueAllowedProps = [...new Set(allowedProps)];
+            if (!uniqueAllowedProps.includes(property._id.toString())) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this property' });
+            }
         }
 
         res.status(200).json({
@@ -175,6 +207,20 @@ exports.getPropertyStructure = async (req, res, next) => {
 
         if (!property) {
             return res.status(404).json({ success: false, error: 'Property not found' });
+        }
+
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = req.user.assignedFloors || [];
+            const allowedProps = [...assignedProps];
+            if (assignedFloors.length > 0) {
+                const floors = await mongoose.model('Floor').find({ _id: { $in: assignedFloors } });
+                allowedProps.push(...floors.map(f => f.property.toString()));
+            }
+            const uniqueAllowedProps = [...new Set(allowedProps)];
+            if (!uniqueAllowedProps.includes(property._id.toString())) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this property structure' });
+            }
         }
 
         const units = await Unit.find({ property: property._id }).sort({ floorNumber: 1, unitNumber: 1 });

@@ -10,10 +10,23 @@ exports.getMeetingRooms = async (req, res, next) => {
         let query = {};
 
         // Role-based filtering
-        if (req.user && req.user.role === 'Floor Admin') {
+        if (req.user && req.user.role === 'FLOOR_ADMIN') {
             query.floor = { $in: req.user.assignedFloors || [] };
-        } else if (req.user && (req.user.role === 'Office Owner' || req.user.role === 'Tenant')) {
+        } else if (req.user && (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Tenant')) {
             query.floor = { $in: req.user.assignedFloors || [] };
+        } else if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                return res.status(200).json({ success: true, count: 0, data: [] });
+            }
+            query.$or = [];
+            if (assignedProps.length > 0) {
+                query.$or.push({ property: { $in: assignedProps } });
+            }
+            if (assignedFloors.length > 0) {
+                query.$or.push({ floor: { $in: assignedFloors } });
+            }
         }
 
         if (req.query.property) {
@@ -49,6 +62,16 @@ exports.getMeetingRoom = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Meeting room not found' });
         }
 
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = (req.user.assignedFloors || []).map(id => id.toString());
+            const isPropAssigned = assignedProps.includes(data.property?._id?.toString() || data.property?.toString());
+            const isFloorAssigned = assignedFloors.includes(data.floor?._id?.toString() || data.floor?.toString());
+            if (!isPropAssigned && !isFloorAssigned) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this meeting room' });
+            }
+        }
+
         res.status(200).json({ success: true, data });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
@@ -57,11 +80,11 @@ exports.getMeetingRoom = async (req, res, next) => {
 
 // @desc    Create a meeting room
 // @route   POST /api/meeting-rooms
-// @access  Private (Super Admin, Floor Admin)
+// @access  Private (SUPER_ADMIN, FLOOR_ADMIN)
 exports.createMeetingRoom = async (req, res, next) => {
     try {
-        // Enforce Floor Admin constraint to only create on their assigned floors
-        if (req.user.role === 'Floor Admin') {
+        // Enforce FLOOR_ADMIN constraint to only create on their assigned floors
+        if (req.user.role === 'FLOOR_ADMIN') {
             const assignedFloors = req.user.assignedFloors.map(id => id.toString());
             if (!assignedFloors.includes(req.body.floor)) {
                 return res.status(403).json({ success: false, error: 'You can only create meeting rooms on your assigned floors' });
@@ -113,7 +136,7 @@ exports.createMeetingRoom = async (req, res, next) => {
 
 // @desc    Update meeting room
 // @route   PUT /api/meeting-rooms/:id
-// @access  Private (Super Admin, Floor Admin)
+// @access  Private (SUPER_ADMIN, FLOOR_ADMIN)
 exports.updateMeetingRoom = async (req, res, next) => {
     try {
         let room = await MeetingRoom.findById(req.params.id);
@@ -121,8 +144,8 @@ exports.updateMeetingRoom = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Meeting room not found' });
         }
 
-        // Enforce Floor Admin constraints
-        if (req.user.role === 'Floor Admin') {
+        // Enforce FLOOR_ADMIN constraints
+        if (req.user.role === 'FLOOR_ADMIN') {
             const assignedFloors = req.user.assignedFloors.map(id => id.toString());
             if (!assignedFloors.includes(room.floor.toString())) {
                 return res.status(403).json({ success: false, error: 'Unauthorized to modify rooms on this floor' });
@@ -177,7 +200,7 @@ exports.updateMeetingRoom = async (req, res, next) => {
 
 // @desc    Delete meeting room
 // @route   DELETE /api/meeting-rooms/:id
-// @access  Private (Super Admin, Floor Admin)
+// @access  Private (SUPER_ADMIN, FLOOR_ADMIN)
 exports.deleteMeetingRoom = async (req, res, next) => {
     try {
         const room = await MeetingRoom.findById(req.params.id);
@@ -185,8 +208,8 @@ exports.deleteMeetingRoom = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Meeting room not found' });
         }
 
-        // Enforce Floor Admin constraints
-        if (req.user.role === 'Floor Admin') {
+        // Enforce FLOOR_ADMIN constraints
+        if (req.user.role === 'FLOOR_ADMIN') {
             const assignedFloors = req.user.assignedFloors.map(id => id.toString());
             if (!assignedFloors.includes(room.floor.toString())) {
                 return res.status(403).json({ success: false, error: 'Unauthorized to delete rooms on this floor' });
