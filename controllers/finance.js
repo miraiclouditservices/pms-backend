@@ -5,13 +5,13 @@ exports.getInvoices = async (req, res, next) => {
     try {
         let query = {};
         if (req.user) {
-            if (req.user.role === 'Office Owner' || req.user.role === 'Owner') {
+            if (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner') {
                 const owner = await require('mongoose').model('Owner').findOne({ user: req.user._id });
                 if (!owner) return res.status(200).json({ success: true, count: 0, data: [] });
                 const assignedFloors = await require('mongoose').model('Floor').find({ assignedOwner: owner._id });
                 const floorIds = assignedFloors.map(f => f._id);
                 query.floor = { $in: floorIds };
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 const assignedFloors = await require('mongoose').model('Floor').find({ assignedAdmin: req.user._id });
                 const floorIds = assignedFloors.map(f => f._id);
                 query.floor = { $in: floorIds };
@@ -19,6 +19,19 @@ exports.getInvoices = async (req, res, next) => {
                 const tenant = await require('mongoose').model('Tenant').findOne({ user: req.user._id });
                 if (!tenant) return res.status(200).json({ success: true, count: 0, data: [] });
                 query.lease = tenant.lease; // Tenant only sees invoices linked to their lease
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                const assignedProps = req.user.assignedProperties || [];
+                const assignedFloors = req.user.assignedFloors || [];
+                if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                    return res.status(200).json({ success: true, count: 0, data: [] });
+                }
+                query.$or = [];
+                if (assignedProps.length > 0) {
+                    query.$or.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    query.$or.push({ floor: { $in: assignedFloors } });
+                }
             }
         }
 

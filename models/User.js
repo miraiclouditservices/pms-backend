@@ -18,8 +18,8 @@ const UserSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['Super Admin', 'Floor Admin', 'Office Owner', 'Staff Admin', 'Tenant'],
-        default: 'Staff Admin'
+        enum: ['SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER', 'STAFF_ADMIN', 'Tenant'],
+        default: 'STAFF_ADMIN'
     },
     staffCategory: {
         type: String,

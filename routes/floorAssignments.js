@@ -5,7 +5,7 @@ const { protect, authorize } = require('../middleware/auth');
 const router = express.Router();
 
 router.use(protect);
-router.use(authorize('Super Admin'));
+router.use(authorize('SUPER_ADMIN'));
 
 router.route('/')
     .get(getFloorAssignments)

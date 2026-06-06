@@ -10,9 +10,9 @@ router.route('/')
     .get(getInvoices);
 
 router.route('/generate')
-    .post(authorize('Super Admin'), generateMonthlyInvoices);
+    .post(authorize('SUPER_ADMIN'), generateMonthlyInvoices);
 
 router.route('/:id/pay')
-    .put(authorize('Super Admin', 'Floor Admin', 'Office Owner'), markAsPaid);
+    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER'), markAsPaid);
 
 module.exports = router;

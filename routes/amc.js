@@ -15,12 +15,12 @@ router.use(protect);
 router
     .route('/')
     .get(getAMCs)
-    .post(authorize('Super Admin', 'Staff Admin'), createAMC);
+    .post(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), createAMC);
 
 router
     .route('/:id')
     .get(getAMC)
-    .put(authorize('Super Admin', 'Staff Admin'), updateAMC)
-    .delete(authorize('Super Admin'), deleteAMC);
+    .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateAMC)
+    .delete(authorize('SUPER_ADMIN'), deleteAMC);
 
 module.exports = router;

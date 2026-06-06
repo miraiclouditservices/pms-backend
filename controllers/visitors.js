@@ -31,7 +31,7 @@ exports.getVisitors = async (req, res) => {
     try {
         let query = {};
 
-        if (req.user && (req.user.role === 'Owner' || req.user.role === 'Office Owner')) {
+        if (req.user && (req.user.role === 'Owner' || req.user.role === 'OFFICE_OWNER')) {
             const user = await User.findById(req.user.id);
             const assignedUnits = user?.assignedUnits || [];
             
@@ -42,10 +42,24 @@ exports.getVisitors = async (req, res) => {
                     { personToMeet: { $regex: new RegExp(req.user.name, 'i') } }
                 ]
             };
-        } else if (req.user && req.user.role === 'Floor Admin') {
+        } else if (req.user && req.user.role === 'FLOOR_ADMIN') {
             const floors = await Floor.find({ assignedAdmin: req.user._id });
             const fIds = floors.map(f => f._id);
             query = { floor: { $in: fIds } };
+        } else if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                query = { _id: null };
+            } else {
+                query.$or = [];
+                if (assignedProps.length > 0) {
+                    query.$or.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    query.$or.push({ floor: { $in: assignedFloors } });
+                }
+            }
         }
 
         const visitors = await Visitor.find(query)
@@ -62,6 +76,16 @@ exports.getVisitor = async (req, res) => {
     try {
         const visitor = await Visitor.findById(req.params.id).populate(POPULATE);
         if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
+        
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = (req.user.assignedFloors || []).map(id => id.toString());
+            const isPropAssigned = assignedProps.includes(visitor.property?._id?.toString() || visitor.property?.toString());
+            const isFloorAssigned = assignedFloors.includes(visitor.floor?._id?.toString() || visitor.floor?.toString());
+            if (!isPropAssigned && !isFloorAssigned) {
+                return res.status(403).json({ success: false, message: 'Not authorized to access this visitor record' });
+            }
+        }
         res.status(200).json({ success: true, data: visitor });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -78,8 +102,8 @@ exports.createVisitor = async (req, res) => {
         if (unitId)       approvalLevel = 'Office Level';
         else if (floorId) approvalLevel = 'Floor Level';
 
-        // Office Owner creates visitor → auto-approve
-        const isOfficeOwner = req.user?.role === 'Office Owner';
+        // OFFICE_OWNER creates visitor → auto-approve
+        const isOfficeOwner = req.user?.role === 'OFFICE_OWNER';
         const autoApprove   = isOfficeOwner && !!unitId;
 
         const visitor = await Visitor.create({
@@ -100,11 +124,11 @@ exports.createVisitor = async (req, res) => {
 
             if (approvalLevel === 'Office Level' && unitId) {
                 const unit = await Unit.findById(unitId).populate('owner');
-                if (unit?.owner?.user) { recipientIds = [unit.owner.user]; authorityLabel = `Office Owner`; }
+                if (unit?.owner?.user) { recipientIds = [unit.owner.user]; authorityLabel = `OFFICE_OWNER`; }
 
             } else if (approvalLevel === 'Floor Level' && floorId) {
                 const floor = await Floor.findById(floorId);
-                if (floor?.assignedAdmin)  { recipientIds = [floor.assignedAdmin]; authorityLabel = `Floor Admin (Floor ${floor.floorNumber})`; }
+                if (floor?.assignedAdmin)  { recipientIds = [floor.assignedAdmin]; authorityLabel = `FLOOR_ADMIN (Floor ${floor.floorNumber})`; }
                 else if (floor?.assignedOwner) {
                     const owner = await require('../models/Owner').findById(floor.assignedOwner);
                     if (owner?.user) { recipientIds = [owner.user]; authorityLabel = `Floor Owner`; }
@@ -115,9 +139,9 @@ exports.createVisitor = async (req, res) => {
                 if (property?.createdBy) { recipientIds = [property.createdBy]; authorityLabel = `Property Owner`; }
             }
 
-            // Fallback → all Super Admins
+            // Fallback → all SUPER_ADMINs
             if (!recipientIds.length) {
-                const admins = await User.find({ role: 'Super Admin' }).select('_id');
+                const admins = await User.find({ role: 'SUPER_ADMIN' }).select('_id');
                 recipientIds = admins.map(a => a._id);
                 authorityLabel = 'Admin';
             }
@@ -244,7 +268,7 @@ exports.getVisitorStats = async (req, res) => {
         const today = new Date().toISOString().split('T')[0];
         let query = {};
 
-        if (req.user && (req.user.role === 'Owner' || req.user.role === 'Office Owner')) {
+        if (req.user && (req.user.role === 'Owner' || req.user.role === 'OFFICE_OWNER')) {
             const user = await User.findById(req.user.id);
             const assignedUnits = user?.assignedUnits || [];
             
@@ -255,10 +279,24 @@ exports.getVisitorStats = async (req, res) => {
                     { personToMeet: { $regex: new RegExp(req.user.name, 'i') } }
                 ]
             };
-        } else if (req.user && req.user.role === 'Floor Admin') {
+        } else if (req.user && req.user.role === 'FLOOR_ADMIN') {
             const floors = await Floor.find({ assignedAdmin: req.user._id });
             const fIds = floors.map(f => f._id);
             query = { floor: { $in: fIds } };
+        } else if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                query = { _id: null };
+            } else {
+                query.$or = [];
+                if (assignedProps.length > 0) {
+                    query.$or.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    query.$or.push({ floor: { $in: assignedFloors } });
+                }
+            }
         }
 
         const [total, todayCount, pending, approved, checkedIn, checkedOut, rejected] = await Promise.all([

@@ -15,12 +15,12 @@ router.use(protect);
 router
     .route('/')
     .get(getAssets)
-    .post(authorize('Super Admin', 'Admin'), createAsset);
+    .post(authorize('SUPER_ADMIN', 'Admin'), createAsset);
 
 router
     .route('/:id')
     .get(getAsset)
-    .put(authorize('Super Admin', 'Admin'), updateAsset)
-    .delete(authorize('Super Admin', 'Admin'), deleteAsset);
+    .put(authorize('SUPER_ADMIN', 'Admin'), updateAsset)
+    .delete(authorize('SUPER_ADMIN', 'Admin'), deleteAsset);
 
 module.exports = router;

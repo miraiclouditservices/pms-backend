@@ -15,12 +15,12 @@ router.use(protect);
 router
     .route('/')
     .get(getMeetingRooms)
-    .post(authorize('Super Admin', 'Floor Admin'), createMeetingRoom);
+    .post(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), createMeetingRoom);
 
 router
     .route('/:id')
     .get(getMeetingRoom)
-    .put(authorize('Super Admin', 'Floor Admin'), updateMeetingRoom)
-    .delete(authorize('Super Admin', 'Floor Admin'), deleteMeetingRoom);
+    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), updateMeetingRoom)
+    .delete(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), deleteMeetingRoom);
 
 module.exports = router;

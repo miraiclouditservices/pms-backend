@@ -20,12 +20,12 @@ router
 router
     .route('/')
     .get(getVendors)
-    .post(authorize('Super Admin', 'Staff Admin'), createVendor);
+    .post(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), createVendor);
 
 router
     .route('/:id')
     .get(getVendor)
-    .put(authorize('Super Admin', 'Staff Admin'), updateVendor)
-    .delete(authorize('Super Admin'), deleteVendor);
+    .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateVendor)
+    .delete(authorize('SUPER_ADMIN'), deleteVendor);
 
 module.exports = router;

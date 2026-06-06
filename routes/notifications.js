@@ -8,7 +8,7 @@ router.use(protect);
 
 router.route('/')
     .get(getNotifications)
-    .post(authorize('Super Admin', 'Staff Admin'), createNotification);
+    .post(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), createNotification);
 
 router.put('/:id/read', markAsRead);
 

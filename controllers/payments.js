@@ -10,7 +10,7 @@ exports.getPayments = async (req, res, next) => {
                 const tenant = await require('mongoose').model('Tenant').findOne({ user: req.user._id });
                 if (!tenant) return res.status(200).json({ success: true, data: [] });
                 query.lease = tenant.lease;
-            } else if (req.user.role === 'Floor Admin') {
+            } else if (req.user.role === 'FLOOR_ADMIN') {
                 const Floor = require('../models/Floor');
                 const Lease = require('../models/Lease');
                 const floors = await Floor.find({ assignedAdmin: req.user._id });
@@ -18,7 +18,7 @@ exports.getPayments = async (req, res, next) => {
                 const leases = await Lease.find({ floor: { $in: fIds } });
                 const leaseIds = leases.map(l => l._id);
                 query.lease = { $in: leaseIds };
-            } else if (req.user.role === 'Owner' || req.user.role === 'Office Owner') {
+            } else if (req.user.role === 'Owner' || req.user.role === 'OFFICE_OWNER') {
                 const Floor = require('../models/Floor');
                 const Lease = require('../models/Lease');
                 const Owner = require('../models/Owner');
@@ -31,6 +31,24 @@ exports.getPayments = async (req, res, next) => {
                     query.lease = { $in: leaseIds };
                 } else {
                     query.lease = { $in: [] };
+                }
+            } else if (req.user.role === 'STAFF_ADMIN') {
+                const assignedProps = req.user.assignedProperties || [];
+                const assignedFloors = req.user.assignedFloors || [];
+                if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                    query.lease = { $in: [] };
+                } else {
+                    const Lease = require('../models/Lease');
+                    const orConditions = [];
+                    if (assignedProps.length > 0) {
+                        orConditions.push({ property: { $in: assignedProps } });
+                    }
+                    if (assignedFloors.length > 0) {
+                        orConditions.push({ floor: { $in: assignedFloors } });
+                    }
+                    const leases = await Lease.find({ $or: orConditions });
+                    const leaseIds = leases.map(l => l._id);
+                    query.lease = { $in: leaseIds };
                 }
             }
         }
@@ -53,7 +71,9 @@ exports.getPayments = async (req, res, next) => {
             }
         }
 
-        const payments = await Payment.find(query).sort({ year: -1, month: -1 });
+        const payments = await Payment.find(query)
+            .populate('lease', 'tenantName')
+            .sort({ year: -1, month: -1 });
 
         res.status(200).json({
             success: true,
@@ -67,6 +87,13 @@ exports.getPayments = async (req, res, next) => {
 exports.createPayment = async (req, res, next) => {
     try {
         const payment = await Payment.create(req.body);
+
+        // Mark corresponding invoice as Paid
+        const Finance = require('../models/Finance');
+        await Finance.findOneAndUpdate(
+            { lease: payment.lease, month: payment.month, year: payment.year },
+            { status: 'Paid' }
+        );
 
         res.status(201).json({
             success: true,
@@ -106,11 +133,20 @@ exports.updatePayment = async (req, res, next) => {
 
 exports.deletePayment = async (req, res, next) => {
     try {
-        const payment = await Payment.findByIdAndDelete(req.params.id);
+        const payment = await Payment.findById(req.params.id);
 
         if (!payment) {
             return res.status(404).json({ success: false, error: 'Payment record not found' });
         }
+
+        // Revert corresponding invoice status to Pending
+        const Finance = require('../models/Finance');
+        await Finance.findOneAndUpdate(
+            { lease: payment.lease, month: payment.month, year: payment.year },
+            { status: 'Pending' }
+        );
+
+        await payment.deleteOne();
 
         res.status(200).json({
             success: true,

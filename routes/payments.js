@@ -9,14 +9,13 @@ const {
 const { protect, authorize } = require('../middleware/auth');
 
 router.use(protect);
-router.use(authorize('Admin'));
 
 router.route('/')
     .get(getPayments)
-    .post(createPayment);
+    .post(authorize('SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER'), createPayment);
 
 router.route('/:id')
-    .put(updatePayment)
-    .delete(deletePayment);
+    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER'), updatePayment)
+    .delete(authorize('SUPER_ADMIN'), deletePayment);
 
 module.exports = router;

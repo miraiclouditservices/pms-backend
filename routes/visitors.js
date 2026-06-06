@@ -16,32 +16,32 @@ router.get('/stats', getVisitorStats);
 router.route('/')
     .get(getVisitors)
     .post(
-        authorize('Super Admin', 'Staff Admin', 'Office Owner', 'Floor Admin'),
+        authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'OFFICE_OWNER', 'FLOOR_ADMIN'),
         createVisitor
     );
 
 router.route('/:id')
     .get(getVisitor)
-    .put(authorize('Super Admin', 'Staff Admin'), updateVisitor)
-    .delete(authorize('Super Admin'), deleteVisitor);
+    .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateVisitor)
+    .delete(authorize('SUPER_ADMIN'), deleteVisitor);
 
 // ── Approval Flow ─────────────────────────────────────────────────────────────
 router.patch('/:id/approve',
-    authorize('Super Admin', 'Staff Admin', 'Office Owner', 'Floor Admin'),
+    authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'OFFICE_OWNER', 'FLOOR_ADMIN'),
     approveVisitor
 );
 router.patch('/:id/reject',
-    authorize('Super Admin', 'Staff Admin', 'Office Owner', 'Floor Admin'),
+    authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'OFFICE_OWNER', 'FLOOR_ADMIN'),
     rejectVisitor
 );
 
 // ── Security/Watchman Gate Actions ────────────────────────────────────────────
 router.patch('/:id/check-in',
-    authorize('Super Admin', 'Staff Admin', 'Watchman', 'Security'),
+    authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'Watchman', 'Security'),
     checkInVisitor
 );
 router.patch('/:id/check-out',
-    authorize('Super Admin', 'Staff Admin', 'Watchman', 'Security'),
+    authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'Watchman', 'Security'),
     checkOutVisitor
 );
 

@@ -12,15 +12,15 @@ const toMinutes = (timeStr) => {
 // Helper to send system notifications
 const sendBookingNotification = async (booking, title, message) => {
     try {
-        // Find Floor Admins of the floor
+        // Find FLOOR_ADMINs of the floor
         const floorAdmins = await User.find({
-            role: 'Floor Admin',
+            role: 'FLOOR_ADMIN',
             assignedFloors: booking.floor
         });
 
-        // Find Office Owners on the same floor
+        // Find OFFICE_OWNERs on the same floor
         const officeOwners = await User.find({
-            role: 'Office Owner',
+            role: 'OFFICE_OWNER',
             assignedFloors: booking.floor
         });
 
@@ -55,10 +55,23 @@ exports.getBookings = async (req, res, next) => {
         let query = {};
         
         // Role-based visibility
-        if (req.user && req.user.role === 'Floor Admin') {
+        if (req.user && req.user.role === 'FLOOR_ADMIN') {
             query.floor = { $in: req.user.assignedFloors || [] };
-        } else if (req.user && (req.user.role === 'Office Owner' || req.user.role === 'Tenant')) {
+        } else if (req.user && (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Tenant')) {
             query.floor = { $in: req.user.assignedFloors || [] };
+        } else if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                return res.status(200).json({ success: true, count: 0, data: [] });
+            }
+            query.$or = [];
+            if (assignedProps.length > 0) {
+                query.$or.push({ property: { $in: assignedProps } });
+            }
+            if (assignedFloors.length > 0) {
+                query.$or.push({ floor: { $in: assignedFloors } });
+            }
         }
 
         if (req.query.meetingRoom) {
@@ -89,6 +102,16 @@ exports.getBooking = async (req, res, next) => {
 
         if (!data) {
             return res.status(404).json({ success: false, error: 'Booking not found' });
+        }
+
+        if (req.user && req.user.role === 'STAFF_ADMIN') {
+            const assignedProps = (req.user.assignedProperties || []).map(id => id.toString());
+            const assignedFloors = (req.user.assignedFloors || []).map(id => id.toString());
+            const isPropAssigned = assignedProps.includes(data.property?._id?.toString() || data.property?.toString());
+            const isFloorAssigned = assignedFloors.includes(data.floor?._id?.toString() || data.floor?.toString());
+            if (!isPropAssigned && !isFloorAssigned) {
+                return res.status(403).json({ success: false, error: 'Not authorized to access this booking' });
+            }
         }
 
         res.status(200).json({ success: true, data });

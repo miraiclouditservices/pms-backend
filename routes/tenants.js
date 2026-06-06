@@ -9,11 +9,11 @@ router.use(protect);
 
 router.route('/')
     .get(getTenants)
-    .post(authorize('Super Admin', 'Floor Admin', 'Office Owner'), createTenant);
+    .post(authorize('SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER'), createTenant);
 
 router.route('/:id')
     .get(getTenant)
-    .put(authorize('Super Admin', 'Floor Admin', 'Office Owner', 'Tenant'), updateTenant)
-    .delete(authorize('Super Admin'), deleteTenant);
+    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER', 'Tenant'), updateTenant)
+    .delete(authorize('SUPER_ADMIN'), deleteTenant);
 
 module.exports = router;

@@ -22,7 +22,7 @@ exports.getMetrics = async (req, res) => {
         let visitorQuery = {};
         let materialQuery = {};
         let propertyQuery = {};
-        let staffQuery = { role: { $in: ['Staff Admin','Floor Admin','Watchman','Security'] } };
+        let staffQuery = { role: { $in: ['STAFF_ADMIN','FLOOR_ADMIN','Watchman','Security'] } };
 
         // 1. Property Filter
         if (propertyId) {
@@ -84,9 +84,9 @@ exports.getMetrics = async (req, res) => {
             }
         }
 
-        const isSuperAdmin = ['Super Admin','Admin','Staff Admin'].includes(req.user?.role);
+        const isSuperAdmin = ['SUPER_ADMIN','Admin'].includes(req.user?.role);
 
-        if (req.user?.role === 'Office Owner' || req.user?.role === 'Owner') {
+        if (req.user?.role === 'OFFICE_OWNER' || req.user?.role === 'Owner') {
             const user = await User.findById(req.user.id);
             const assignedUnits = user?.assignedUnits || [];
             
@@ -121,7 +121,7 @@ exports.getMetrics = async (req, res) => {
                 { assignedFloors: { $in: floorIds } },
                 { assignedProperties: { $in: propertyIds } }
             ];
-        } else if (req.user?.role === 'Floor Admin') {
+        } else if (req.user?.role === 'FLOOR_ADMIN') {
             const floors = await Floor.find({ assignedAdmin: req.user._id });
             const fIds   = floors.map(f => f._id);
             const propertyIds = floors.map(f => f.property).filter(Boolean);
@@ -138,6 +138,54 @@ exports.getMetrics = async (req, res) => {
                 { assignedFloors: { $in: fIds } },
                 { assignedProperties: { $in: propertyIds } }
             ];
+        } else if (req.user?.role === 'STAFF_ADMIN') {
+            const assignedProps = req.user.assignedProperties || [];
+            const assignedFloors = req.user.assignedFloors || [];
+            
+            if (assignedProps.length === 0 && assignedFloors.length === 0) {
+                propertyQuery._id = { $in: [] };
+                floorQuery._id = { $in: [] };
+                unitQuery._id = { $in: [] };
+                leaseQuery._id = { $in: [] };
+                visitorQuery._id = { $in: [] };
+                materialQuery._id = { $in: [] };
+                staffQuery._id = { $in: [] };
+            } else {
+                const allowedPropIds = [...assignedProps.map(id => id.toString())];
+                if (assignedFloors.length > 0) {
+                    const floors = await Floor.find({ _id: { $in: assignedFloors } });
+                    allowedPropIds.push(...floors.map(f => f.property.toString()));
+                }
+                const uniqueProps = [...new Set(allowedPropIds)];
+
+                propertyQuery._id = propertyQuery._id 
+                    ? { $and: [propertyQuery._id, { $in: uniqueProps }] } 
+                    : { $in: uniqueProps };
+
+                const floorOrConditions = [];
+                if (assignedProps.length > 0) {
+                    floorOrConditions.push({ property: { $in: assignedProps } });
+                }
+                if (assignedFloors.length > 0) {
+                    floorOrConditions.push({ _id: { $in: assignedFloors } });
+                }
+                
+                const staffOrConditions = [];
+                if (assignedProps.length > 0) staffOrConditions.push({ assignedProperties: { $in: assignedProps } });
+                if (assignedFloors.length > 0) staffOrConditions.push({ assignedFloors: { $in: assignedFloors } });
+
+                floorQuery = { $and: [floorQuery, { $or: floorOrConditions }] };
+                
+                const spaceOrConditions = [];
+                if (assignedProps.length > 0) spaceOrConditions.push({ property: { $in: assignedProps } });
+                if (assignedFloors.length > 0) spaceOrConditions.push({ floor: { $in: assignedFloors } });
+
+                unitQuery = { $and: [unitQuery, { $or: spaceOrConditions }] };
+                leaseQuery = { $and: [leaseQuery, { $or: spaceOrConditions }] };
+                visitorQuery = { $and: [visitorQuery, { $or: spaceOrConditions }] };
+                materialQuery = { $and: [materialQuery, { $or: spaceOrConditions }] };
+                staffQuery = { $and: [staffQuery, { $or: staffOrConditions }] };
+            }
         }
 
         // ── Core counts ────────────────────────────────────────────────────────

@@ -61,7 +61,7 @@ async function runLeaseAutomation() {
                 });
 
                 // Notify Admins
-                const admins = await User.find({ role: { $in: ['Super Admin', 'Staff Admin'] } });
+                const admins = await User.find({ role: { $in: ['SUPER_ADMIN', 'STAFF_ADMIN'] } });
                 for (const admin of admins) {
                     await Notification.create({
                         user: admin._id,
@@ -78,7 +78,7 @@ async function runLeaseAutomation() {
                 if ([30, 15, 7].includes(diffDays)) {
                     console.log(`Lease ${lease._id} is expiring in ${diffDays} days. Triggering notifications.`);
                     
-                    const admins = await User.find({ role: { $in: ['Super Admin', 'Floor Admin', 'Staff Admin'] } });
+                    const admins = await User.find({ role: { $in: ['SUPER_ADMIN', 'FLOOR_ADMIN', 'STAFF_ADMIN'] } });
                     for (const admin of admins) {
                         await Notification.create({
                             user: admin._id,
@@ -132,7 +132,7 @@ async function runLeaseAutomation() {
                         });
 
                         // Notify
-                        const admins = await User.find({ role: { $in: ['Super Admin', 'Staff Admin'] } });
+                        const admins = await User.find({ role: { $in: ['SUPER_ADMIN', 'STAFF_ADMIN'] } });
                         for (const admin of admins) {
                             await Notification.create({
                                 user: admin._id,
@@ -149,7 +149,7 @@ async function runLeaseAutomation() {
         // 4. Send Management Payment Reminder Notifications to Users 5 Days Before Payment is Due
         console.log('Checking user management payment schedules...');
         const usersForReminder = await User.find({
-            role: { $in: ['Floor Admin', 'Office Owner', 'Owner'] },
+            role: { $in: ['FLOOR_ADMIN', 'OFFICE_OWNER', 'Owner'] },
             agreementStatus: 'Active'
         });
 

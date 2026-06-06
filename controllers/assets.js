@@ -7,9 +7,9 @@ const factory = require('./factory');
 // Helper to send system notifications
 const sendAssetNotification = async (asset, title, message) => {
     try {
-        // Find Floor Admins & Office Owners of the property
+        // Find FLOOR_ADMINs & OFFICE_OWNERs of the property
         const query = {
-            role: { $in: ['Floor Admin', 'Office Owner'] }
+            role: { $in: ['FLOOR_ADMIN', 'OFFICE_OWNER'] }
         };
         if (asset.property) {
             query.assignedProperties = asset.property;

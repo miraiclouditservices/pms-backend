@@ -28,6 +28,12 @@ exports.protect = async (req, res, next) => {
             return res.status(401).json({ success: false, error: 'User no longer exists' });
         }
 
+        // Normalize legacy DB roles to ALL_CAPS so all downstream routes and middleware work properly
+        if (req.user.role === 'Super Admin') req.user.role = 'SUPER_ADMIN';
+        else if (req.user.role === 'Office Owner') req.user.role = 'OFFICE_OWNER';
+        else if (req.user.role === 'Floor Admin') req.user.role = 'FLOOR_ADMIN';
+        else if (req.user.role === 'Staff Admin') req.user.role = 'STAFF_ADMIN';
+
         next();
     } catch (err) {
         return res.status(401).json({ success: false, error: 'Not authorized to access this route' });
