@@ -63,7 +63,7 @@ exports.getBookings = async (req, res, next) => {
             const assignedProps = req.user.assignedProperties || [];
             const assignedFloors = req.user.assignedFloors || [];
             if (assignedProps.length === 0 && assignedFloors.length === 0) {
-                return res.status(200).json({ success: true, count: 0, data: [] });
+                return res.status(200).json({ success: true, total: 0, pages: 0, count: 0, data: [] });
             }
             query.$or = [];
             if (assignedProps.length > 0) {
@@ -74,17 +74,62 @@ exports.getBookings = async (req, res, next) => {
             }
         }
 
+        // Apply filters
+        if (req.query.property) {
+            query.property = req.query.property;
+        }
+        if (req.query.floor) {
+            query.floor = req.query.floor;
+        }
         if (req.query.meetingRoom) {
             query.meetingRoom = req.query.meetingRoom;
         }
+
+        // Apply search
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            
+            // Find meeting rooms matching roomName
+            const rooms = await MeetingRoom.find({ roomName: searchRegex }).select('_id');
+            const roomIds = rooms.map(r => r._id);
+
+            const searchConditions = [
+                { bookingId: searchRegex },
+                { bookedBy: searchRegex },
+                { bookingParticulars: searchRegex },
+                { meetingRoom: { $in: roomIds } }
+            ];
+
+            if (query.$or) {
+                query = { $and: [ { $or: query.$or }, { $or: searchConditions } ] };
+            } else {
+                query.$or = searchConditions;
+            }
+        }
+
+        // Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const skip = (page - 1) * limit;
+
+        const total = await Booking.countDocuments(query);
+        const pages = Math.ceil(total / limit);
 
         const data = await Booking.find(query)
             .populate('property', 'propertyName')
             .populate('floor', 'floorNumber floorName')
             .populate('meetingRoom', 'roomName sqft capacity')
-            .sort('-createdAt');
+            .sort('-createdAt')
+            .skip(skip)
+            .limit(limit);
 
-        res.status(200).json({ success: true, count: data.length, data });
+        res.status(200).json({
+            success: true,
+            total,
+            pages,
+            count: data.length,
+            data
+        });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }
@@ -138,6 +183,7 @@ exports.createBooking = async (req, res, next) => {
         req.body.floor = room.floor;
         req.body.bookedByUser = req.user._id;
         req.body.bookedBy = req.user.name || req.user.email || 'System';
+        req.body.bookingStatus = 'Approved';
 
         // Convert string dates
         const dateObj = new Date(bookingDate);

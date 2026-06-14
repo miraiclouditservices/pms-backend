@@ -18,7 +18,7 @@ exports.getMeetingRooms = async (req, res, next) => {
             const assignedProps = req.user.assignedProperties || [];
             const assignedFloors = req.user.assignedFloors || [];
             if (assignedProps.length === 0 && assignedFloors.length === 0) {
-                return res.status(200).json({ success: true, count: 0, data: [] });
+                return res.status(200).json({ success: true, total: 0, pages: 0, count: 0, data: [] });
             }
             query.$or = [];
             if (assignedProps.length > 0) {
@@ -29,6 +29,7 @@ exports.getMeetingRooms = async (req, res, next) => {
             }
         }
 
+        // Apply filters
         if (req.query.property) {
             query.property = req.query.property;
         }
@@ -36,13 +37,58 @@ exports.getMeetingRooms = async (req, res, next) => {
             query.floor = req.query.floor;
         }
 
+        // Apply search
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            
+            // Resolve property & floor searches if applicable
+            const Property = require('../models/Property');
+            const Floor = require('../models/Floor');
+            
+            const [matchingProps, matchingFloors] = await Promise.all([
+                Property.find({ propertyName: searchRegex }).select('_id'),
+                Floor.find({ floorName: searchRegex }).select('_id')
+            ]);
+            
+            const propIds = matchingProps.map(p => p._id);
+            const floorIds = matchingFloors.map(f => f._id);
+
+            const searchConditions = [
+                { roomName: searchRegex },
+                { property: { $in: propIds } },
+                { floor: { $in: floorIds } }
+            ];
+
+            if (query.$or) {
+                query = { $and: [ { $or: query.$or }, { $or: searchConditions } ] };
+            } else {
+                query.$or = searchConditions;
+            }
+        }
+
+        // Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const skip = (page - 1) * limit;
+
+        const total = await MeetingRoom.countDocuments(query);
+        const pages = Math.ceil(total / limit);
+
         const data = await MeetingRoom.find(query)
             .populate('property', 'propertyName')
             .populate('floor', 'floorNumber floorName')
             .populate('unit', 'unitNumber unitName sqft')
-            .sort('-createdAt');
+            .sort('-createdAt')
+            .skip(skip)
+            .limit(limit);
 
-        res.status(200).json({ success: true, count: data.length, data });
+        res.status(200).json({
+            success: true,
+            total,
+            pages,
+            count: data.length,
+            data
+        });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }
@@ -198,39 +244,4 @@ exports.updateMeetingRoom = async (req, res, next) => {
     }
 };
 
-// @desc    Delete meeting room
-// @route   DELETE /api/meeting-rooms/:id
-// @access  Private (SUPER_ADMIN, FLOOR_ADMIN)
-exports.deleteMeetingRoom = async (req, res, next) => {
-    try {
-        const room = await MeetingRoom.findById(req.params.id);
-        if (!room) {
-            return res.status(404).json({ success: false, error: 'Meeting room not found' });
-        }
 
-        // Enforce FLOOR_ADMIN constraints
-        if (req.user.role === 'FLOOR_ADMIN') {
-            const assignedFloors = req.user.assignedFloors.map(id => id.toString());
-            if (!assignedFloors.includes(room.floor.toString())) {
-                return res.status(403).json({ success: false, error: 'Unauthorized to delete rooms on this floor' });
-            }
-        }
-
-        const floorId = room.floor;
-        const unitId = room.unit;
-
-        await room.deleteOne();
-
-        // Release the unit status back to Available
-        if (unitId) {
-            await Unit.findByIdAndUpdate(unitId, { unitStatus: 'Available' });
-        }
-
-        // Recalculate floor stats
-        await Floor.updateFloorStats(floorId);
-
-        res.status(200).json({ success: true, data: {} });
-    } catch (err) {
-        res.status(400).json({ success: false, error: err.message });
-    }
-};

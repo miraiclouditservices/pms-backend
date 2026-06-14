@@ -60,8 +60,86 @@ exports.getMaterials = async (req, res) => {
             }
         }
 
-        const data = await Material.find(query).populate(POPULATE).sort('-createdAt');
-        res.status(200).json({ success: true, count: data.length, data });
+        // Apply filters
+        const andConditions = [];
+        if (Object.keys(query).length > 0) {
+            andConditions.push(query);
+        }
+
+        // Date Filter
+        if (req.query.dateFilter) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (req.query.dateFilter === 'Today') {
+                const start = new Date();
+                start.setHours(0,0,0,0);
+                const end = new Date();
+                end.setHours(23,59,59,999);
+                andConditions.push({ createdAt: { $gte: start, $lte: end } });
+            } else if (req.query.dateFilter === 'Yesterday') {
+                const start = new Date();
+                start.setDate(start.getDate() - 1);
+                start.setHours(0,0,0,0);
+                const end = new Date();
+                end.setDate(end.getDate() - 1);
+                end.setHours(23,59,59,999);
+                andConditions.push({ createdAt: { $gte: start, $lte: end } });
+            } else if (req.query.dateFilter !== 'Select Date' && req.query.dateFilter !== '') {
+                const start = new Date(req.query.dateFilter);
+                start.setHours(0,0,0,0);
+                const end = new Date(req.query.dateFilter);
+                end.setHours(23,59,59,999);
+                andConditions.push({ createdAt: { $gte: start, $lte: end } });
+            }
+        }
+
+        // Status Filter
+        if (req.query.status && req.query.status !== 'All') {
+            andConditions.push({ status: req.query.status });
+        }
+
+        // Gate Pass Type Filter (Inward / Outward)
+        if (req.query.gatePassType && req.query.gatePassType !== 'All') {
+            andConditions.push({ gatePassType: req.query.gatePassType });
+        }
+
+        // Search Filter
+        if (req.query.search) {
+            const regex = new RegExp(req.query.search, 'i');
+            andConditions.push({
+                $or: [
+                    { companyName: regex },
+                    { contactPerson: regex },
+                    { contactNumber: regex },
+                    { materialDetails: regex },
+                    { vehicleNumber: regex },
+                    { gatePassNo: regex }
+                ]
+            });
+        }
+
+        const finalQuery = andConditions.length > 0 ? { $and: andConditions } : {};
+
+        // Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const startIndex = (page - 1) * limit;
+
+        const total = await Material.countDocuments(finalQuery);
+
+        const data = await Material.find(finalQuery)
+            .populate(POPULATE)
+            .sort('-createdAt')
+            .skip(startIndex)
+            .limit(limit);
+
+        res.status(200).json({ 
+            success: true, 
+            count: data.length, 
+            total,
+            page,
+            pages: Math.ceil(total / limit) || 1,
+            data 
+        });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }
@@ -89,7 +167,6 @@ exports.getMaterial = async (req, res) => {
 };
 
 exports.updateMaterial = factory.updateOne(Material);
-exports.deleteMaterial = factory.deleteOne(Material);
 
 // ── Custom createMaterial with approval-level notification ────────────────────
 exports.createMaterial = async (req, res, next) => {
@@ -202,5 +279,28 @@ exports.approveGatePass = async (req, res) => {
         res.status(200).json({ success: true, data: material });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
+    }
+};
+
+// ── Check-Out / Clear (Watchman/Security) ───────────────────────────────────────
+exports.checkOutMaterial = async (req, res) => {
+    try {
+        const material = await Material.findById(req.params.id);
+        if (!material) return res.status(404).json({ success: false, error: 'Gate pass not found' });
+        if (material.status === 'Cleared')
+            return res.status(400).json({ success: false, error: 'Gate pass is already cleared' });
+
+        material.status  = 'Cleared';
+        material.outTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        material.outDate = new Date().toISOString().split('T')[0];
+        if (req.user) {
+            material.approvedBy = req.user._id;
+            material.approvedAt = new Date();
+        }
+        await material.save();
+        const populated = await Material.findById(material._id).populate(POPULATE);
+        res.status(200).json({ success: true, data: populated });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 };

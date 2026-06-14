@@ -8,7 +8,7 @@ exports.getPayments = async (req, res, next) => {
         if (req.user) {
             if (req.user.role === 'Tenant') {
                 const tenant = await require('mongoose').model('Tenant').findOne({ user: req.user._id });
-                if (!tenant) return res.status(200).json({ success: true, data: [] });
+                if (!tenant) return res.status(200).json({ success: true, count: 0, data: [], pagination: { page: 1, limit: 20, totalPages: 0, totalPayments: 0 } });
                 query.lease = tenant.lease;
             } else if (req.user.role === 'FLOOR_ADMIN') {
                 const Floor = require('../models/Floor');
@@ -53,6 +53,8 @@ exports.getPayments = async (req, res, next) => {
             }
         }
 
+        // Apply dynamic query filters
+        // 1. Lease Specific Filter
         if (req.query.lease) {
             if (query.lease) {
                 if (query.lease.$in && Array.isArray(query.lease.$in)) {
@@ -71,12 +73,121 @@ exports.getPayments = async (req, res, next) => {
             }
         }
 
+        // 2. Search query (matches tenantName regex on populated Lease or transactionId on Payment)
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            const matchingLeases = await Lease.find({ tenantName: searchRegex }).select('_id');
+            const leaseIds = matchingLeases.map(l => l._id);
+
+            const orConditions = [
+                { transactionId: searchRegex }
+            ];
+
+            if (query.lease) {
+                if (query.lease.$in) {
+                    const permittedIds = query.lease.$in.map(id => id.toString());
+                    const intersectIds = leaseIds.filter(id => permittedIds.includes(id.toString()));
+                    orConditions.push({ lease: { $in: intersectIds } });
+                } else {
+                    const permittedStr = query.lease.toString();
+                    if (leaseIds.map(id => id.toString()).includes(permittedStr)) {
+                        orConditions.push({ lease: query.lease });
+                    } else {
+                        // Permitted lease doesn't match search, so force match nothing
+                        orConditions.push({ lease: null });
+                    }
+                }
+            } else {
+                orConditions.push({ lease: { $in: leaseIds } });
+            }
+
+            delete query.lease;
+            query.$or = orConditions;
+        }
+
+        // 3. Payment Method Filter
+        if (req.query.paymentMethod && req.query.paymentMethod !== 'All') {
+            query.paymentMethod = req.query.paymentMethod;
+        }
+
+        // 4. Month & Year Filters
+        if (req.query.month && req.query.month !== 'All') {
+            query.month = req.query.month;
+        }
+        if (req.query.year) {
+            query.year = Number(req.query.year);
+        }
+
+        // 5. Amount Range Filter
+        if (req.query.minAmount || req.query.maxAmount) {
+            query.amount = {};
+            if (req.query.minAmount) {
+                query.amount.$gte = Number(req.query.minAmount);
+            }
+            if (req.query.maxAmount) {
+                query.amount.$lte = Number(req.query.maxAmount);
+            }
+        }
+
+        // 6. Date Range Filter
+        if (req.query.startDate || req.query.endDate) {
+            query.paymentDate = {};
+            if (req.query.startDate) {
+                query.paymentDate.$gte = new Date(req.query.startDate);
+            }
+            if (req.query.endDate) {
+                const end = new Date(req.query.endDate);
+                end.setHours(23, 59, 59, 999);
+                query.paymentDate.$lte = end;
+            }
+        }
+
+        // 7. Status Filter (Paid vs Unpaid)
+        if (req.query.status) {
+            if (req.query.status === 'Paid') {
+                query.status = 'Paid';
+            } else if (req.query.status === 'Unpaid') {
+                query.status = { $ne: 'Paid' };
+            }
+        }
+
+        // Pagination setup
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 20;
+        const startIndex = (page - 1) * limit;
+
+        const totalPayments = await Payment.countDocuments(query);
+        const totalPages = Math.ceil(totalPayments / limit);
+
+        // Sorting: Latest first
+        const sort = { paymentDate: -1, createdAt: -1 };
+
+        // Calculate overall stats for the current filter query (without pagination limit)
+        const allMatchingPayments = await Payment.find(query).select('amount');
+        const totalPaymentsCollected = allMatchingPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+        const totalTransactions = allMatchingPayments.length;
+        const avgTxnValue = totalTransactions > 0 ? Math.round(totalPaymentsCollected / totalTransactions) : 0;
+
         const payments = await Payment.find(query)
             .populate('lease', 'tenantName')
-            .sort({ year: -1, month: -1 });
+            .sort(sort)
+            .skip(startIndex)
+            .limit(limit);
 
         res.status(200).json({
             success: true,
+            count: payments.length,
+            pagination: {
+                page,
+                limit,
+                totalPages,
+                totalPayments
+            },
+            summary: {
+                totalCollected: totalPaymentsCollected,
+                totalTransactions,
+                avgTxnValue
+            },
             data: payments
         });
     } catch (err) {

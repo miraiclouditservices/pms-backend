@@ -18,9 +18,12 @@ const VendorSchema = new mongoose.Schema({
     contactName: {
         type: String
     },
-    mobileNumber: {
+    contactNumber: {
         type: String,
-        required: [true, 'Please add a mobile number']
+        required: [true, 'Please add a contact number']
+    },
+    emergencyNumber: {
+        type: String
     },
     emailId: {
         type: String,
@@ -37,16 +40,14 @@ const VendorSchema = new mongoose.Schema({
         enum: ['Active', 'Inactive'],
         default: 'Active'
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    }
-});
+}, { timestamps: true });
 
-// Auto-generate vendor code if not provided
-VendorSchema.pre('save', async function() {
+// Auto-generate a sequential vendor code before saving
+VendorSchema.pre('save', async function () {
     if (!this.vendorCode) {
-        this.vendorCode = 'VND-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+        const count = await mongoose.model('Vendor').countDocuments();
+        const seq = String(count + 1).padStart(4, '0');
+        this.vendorCode = `VND-${seq}`;
     }
 });
 

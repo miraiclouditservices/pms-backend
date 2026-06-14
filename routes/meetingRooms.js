@@ -3,8 +3,7 @@ const {
     getMeetingRooms,
     getMeetingRoom,
     createMeetingRoom,
-    updateMeetingRoom,
-    deleteMeetingRoom
+    updateMeetingRoom
 } = require('../controllers/meetingRooms');
 
 const router = express.Router();
@@ -20,7 +19,6 @@ router
 router
     .route('/:id')
     .get(getMeetingRoom)
-    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), updateMeetingRoom)
-    .delete(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), deleteMeetingRoom);
+    .put(authorize('SUPER_ADMIN', 'FLOOR_ADMIN'), updateMeetingRoom);
 
 module.exports = router;

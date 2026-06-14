@@ -18,7 +18,7 @@ const UserSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ['SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER', 'STAFF_ADMIN', 'Tenant'],
+        enum: ['SUPER_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER', 'STAFF_ADMIN',],
         default: 'STAFF_ADMIN'
     },
     staffCategory: {
@@ -71,9 +71,13 @@ const UserSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    totalAgreementAmount: {
+        type: Number,
+        default: 0
+    },
     paymentType: {
         type: String,
-        enum: ['Monthly', 'Quarterly', 'Yearly'],
+        enum: ['Monthly', 'Quarterly', 'Half-Yearly', 'Yearly', 'One Time', 'Monthly Installment', 'Quarterly Installment', 'Half-Yearly Installment', 'Yearly Installment', 'Custom Installment'],
         default: 'Monthly'
     },
     paymentDueDay: {
@@ -92,6 +96,10 @@ const UserSchema = new mongoose.Schema({
     },
     idProofUrl: {
         type: String
+    },
+    createdBy: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User'
     },
     remarks: {
         type: String

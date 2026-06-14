@@ -1,61 +1,112 @@
 const mongoose = require('mongoose');
 
 const HelpdeskSchema = new mongoose.Schema({
-    tenant: { type: mongoose.Schema.ObjectId, ref: 'Tenant' },
-    ticketNumber: {
+    ticketId: {
         type: String,
         unique: true
     },
-    natureOfComplaint: {
+    title: {
         type: String,
-        required: [true, 'Please add nature of complaint']
+        required: [true, 'Please add ticket title']
     },
-    complaintDescription: {
+    category: {
+        type: String,
+        enum: [
+            'Maintenance',
+            'Electricity',
+            'Water',
+            'Payment',
+            'Agreement',
+            'Security',
+            'Technical Issue',
+            'Complaint',
+            'Other'
+        ],
+        required: [true, 'Please add a category']
+    },
+    priority: {
+        type: String,
+        enum: ['Low', 'Medium', 'High', 'Critical'],
+        required: [true, 'Please select a priority']
+    },
+    description: {
         type: String,
         required: [true, 'Please add a description']
     },
-    dateOfComplaint: {
-        type: Date,
-        default: Date.now
-    },
-    timeOfComplaint: {
+    attachment: {
         type: String
     },
-    allocatedTo: {
+    raisedBy: {
+        type: String,
+        required: true
+    },
+    raisedRole: {
+        type: String,
+        required: true
+    },
+    raisedUserId: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    property: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Property',
+        required: [true, 'Please select a property']
+    },
+    floor: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Floor',
+        required: [true, 'Please select a floor']
+    },
+    unit: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Unit'
+    },
+    locationArea: {
         type: String
     },
-    escalated: {
-        type: Boolean,
-        default: false
+    assignedTo: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User'
     },
-    resolvedDate: {
+    assignedRole: {
+        type: String
+    },
+    assignedAt: {
         type: Date
-    },
-    resolvedTime: {
-        type: String
-    },
-    productiveHours: {
-        type: Number // Storing as number for auto-calculation
     },
     status: {
         type: String,
-        enum: ['Open', 'In Progress', 'Resolved', 'Closed'],
-        default: 'Open'
+        enum: ['OPEN', 'ASSIGNED', 'IN_PROGRESS', 'WAITING_FOR_RESPONSE', 'RESOLVED', 'CLOSED'],
+        default: 'OPEN'
     },
-    createdAt: {
-        type: Date,
-        default: Date.now
+    resolvedBy: {
+        type: String
+    },
+    resolvedRole: {
+        type: String
+    },
+    resolvedAt: {
+        type: Date
+    },
+    resolutionNote: {
+        type: String
+    },
+    updatedBy: {
+        type: String
+    },
+    updatedRole: {
+        type: String
     }
+}, {
+    timestamps: true
 });
 
-// Pre-save to generate ticket number and set time
+// Pre-save to generate ticketId
 HelpdeskSchema.pre('save', async function () {
-    if (!this.ticketNumber) {
-        this.ticketNumber = 'TKT-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    }
-    
-    if (!this.timeOfComplaint) {
-        this.timeOfComplaint = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    if (!this.ticketId) {
+        this.ticketId = 'TKT-' + Math.random().toString(36).substr(2, 6).toUpperCase();
     }
 });
 

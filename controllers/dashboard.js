@@ -246,9 +246,9 @@ exports.getMetrics = async (req, res) => {
             visitorsCheckedInQuery = { _id: null };
         }
 
-        const [visitorsToday, visitorsPending, visitorsCheckedIn] = await Promise.all([
+        const [visitorsToday, visitorsCheckedOut, visitorsCheckedIn] = await Promise.all([
             Visitor.countDocuments({ ...visitorQuery, visitDate: todayStr }),
-            Visitor.countDocuments({ ...visitorQuery, status: 'Pending' }),
+            Visitor.countDocuments({ ...visitorQuery, status: 'Checked-Out', visitDate: todayStr }),
             Visitor.countDocuments(visitorsCheckedInQuery),
         ]);
         const recentVisitors = await Visitor.find(visitorQuery).sort('-createdAt').limit(5)
@@ -280,8 +280,8 @@ exports.getMetrics = async (req, res) => {
         // ── Staff ──────────────────────────────────────────────────────────────
         const totalStaff = await User.countDocuments(staffQuery);
 
-        // ── Pending Approvals (visitors + gate passes) ─────────────────────────
-        const pendingApprovals = visitorsPending + gatePassPending;
+        // ── Pending Approvals (only gate passes, as visitors are auto-approved/no approval) ────────────────
+        const pendingApprovals = gatePassPending;
 
         // ── Monthly revenue trend (last 6 months) ─────────────────────────────
         const monthlyRevenue = [];
@@ -315,7 +315,7 @@ exports.getMetrics = async (req, res) => {
                     totalSft, occupiedSft: calculatedOccupiedSft, availableSft: calculatedAvailableSft, occupancyPct,
                     leaseRevenue, camRevenue, totalRevenue,
                     activeTenantsCount, expiringLeasesCount,
-                    visitorsToday, visitorsPending, visitorsCheckedIn,
+                    visitorsToday, visitorsCheckedOut, visitorsCheckedIn,
                     gatePassTotal, gatePassPending, gatePassApproved,
                     totalStaff, pendingApprovals,
                 },

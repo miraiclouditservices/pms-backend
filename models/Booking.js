@@ -55,7 +55,7 @@ const BookingSchema = new mongoose.Schema({
     bookingStatus: {
         type: String,
         enum: ['Approved', 'Rejected', 'Pending'],
-        default: 'Pending'
+        default: 'Approved'
     },
     startNotificationSent: {
         type: Boolean,

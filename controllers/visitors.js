@@ -62,10 +62,73 @@ exports.getVisitors = async (req, res) => {
             }
         }
 
-        const visitors = await Visitor.find(query)
+        // Apply filters
+        const andConditions = [];
+        if (Object.keys(query).length > 0) {
+            andConditions.push(query);
+        }
+
+        // Date Filter
+        if (req.query.dateFilter) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            if (req.query.dateFilter === 'Today') {
+                andConditions.push({ visitDate: todayStr });
+            } else if (req.query.dateFilter === 'Yesterday') {
+                const yesterday = new Date();
+                yesterday.setDate(yesterday.getDate() - 1);
+                const yesterdayStr = yesterday.toISOString().split('T')[0];
+                andConditions.push({ visitDate: yesterdayStr });
+            } else if (req.query.dateFilter !== 'Select Date' && req.query.dateFilter !== '') {
+                andConditions.push({ visitDate: req.query.dateFilter });
+            }
+        }
+
+        // Status Filter
+        if (req.query.status && req.query.status !== 'Visit Status: All' && req.query.status !== 'All') {
+            andConditions.push({ status: req.query.status });
+        }
+
+        // Purpose Filter
+        if (req.query.purpose && req.query.purpose !== 'Purpose: All' && req.query.purpose !== 'All') {
+            andConditions.push({ purposeOfVisit: req.query.purpose });
+        }
+
+        // Search Filter
+        if (req.query.search) {
+            const regex = new RegExp(req.query.search, 'i');
+            andConditions.push({
+                $or: [
+                    { visitorName: regex },
+                    { visitorContactNumber: regex },
+                    { purposeOfVisit: regex },
+                    { personToMeet: regex }
+                ]
+            });
+        }
+
+        const finalQuery = andConditions.length > 0 ? { $and: andConditions } : {};
+
+        // Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 10;
+        const startIndex = (page - 1) * limit;
+
+        const total = await Visitor.countDocuments(finalQuery);
+
+        const visitors = await Visitor.find(finalQuery)
             .populate(POPULATE)
-            .sort({ createdAt: -1 });
-        res.status(200).json({ success: true, count: visitors.length, data: visitors });
+            .sort({ createdAt: -1 })
+            .skip(startIndex)
+            .limit(limit);
+
+        res.status(200).json({ 
+            success: true, 
+            count: visitors.length,
+            total,
+            page,
+            pages: Math.ceil(total / limit) || 1,
+            data: visitors 
+        });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -102,10 +165,6 @@ exports.createVisitor = async (req, res) => {
         if (unitId)       approvalLevel = 'Office Level';
         else if (floorId) approvalLevel = 'Floor Level';
 
-        // OFFICE_OWNER creates visitor → auto-approve
-        const isOfficeOwner = req.user?.role === 'OFFICE_OWNER';
-        const autoApprove   = isOfficeOwner && !!unitId;
-
         const visitor = await Visitor.create({
             ...rest,
             property:     propertyId || undefined,
@@ -113,8 +172,7 @@ exports.createVisitor = async (req, res) => {
             unit:         unitId     || undefined,
             approvalLevel,
             createdBy:    req.user?._id,
-            status:       autoApprove ? 'Approved' : 'Pending',
-            ...(autoApprove ? { approvedBy: req.user._id, approvedAt: new Date() } : {}),
+            status:       'Checked-In',
         });
 
         // ── Fire targeted notification ────────────────────────────────────────
@@ -146,30 +204,26 @@ exports.createVisitor = async (req, res) => {
                 authorityLabel = 'Admin';
             }
 
-            const notifMsg = autoApprove
-                ? `Visitor "${visitor.visitorName}" was auto-approved for office entry. Security has been notified.`
-                : `New visitor "${visitor.visitorName}" is awaiting your approval (${approvalLevel}).`;
+            const notifMsg = `Visitor "${visitor.visitorName}" has checked in to meet "${visitor.personToMeet || '—'}".`;
 
             for (const uid of recipientIds) {
                 await Notification.create({
                     user: uid,
-                    title: autoApprove ? 'Visitor Entry Notification' : 'Visitor Approval Required',
+                    title: 'New Visitor Notification',
                     message: notifMsg,
                     type: 'Alert',
                 });
             }
 
-            // If auto-approved → also notify Watchman/Security
-            if (autoApprove) {
-                const watchmen = await User.find({ role: { $in: ['Watchman', 'Security'] } }).select('_id');
-                for (const w of watchmen) {
-                    await Notification.create({
-                        user: w._id,
-                        title: '✅ Visitor Approved — Allow Entry',
-                        message: `Visitor "${visitor.visitorName}" (${visitor.visitorContactNumber}) has been approved for entry. Please allow access and capture In-Time.`,
-                        type: 'Alert',
-                    });
-                }
+            // Notify Watchman/Security
+            const watchmen = await User.find({ role: { $in: ['Watchman', 'Security'] } }).select('_id');
+            for (const w of watchmen) {
+                await Notification.create({
+                    user: w._id,
+                    title: 'Visitor Registered — Checked In',
+                    message: `Visitor "${visitor.visitorName}" (${visitor.visitorContactNumber}) has checked in to meet "${visitor.personToMeet || '—'}".`,
+                    type: 'Alert',
+                });
             }
         } catch (notifErr) {
             console.error('Notification error:', notifErr.message);
@@ -184,61 +238,60 @@ exports.createVisitor = async (req, res) => {
 exports.updateVisitor = factory.updateOne(Visitor);
 exports.deleteVisitor = factory.deleteOne(Visitor);
 
-// ── Approve Visitor ───────────────────────────────────────────────────────────
-exports.approveVisitor = async (req, res) => {
-    try {
-        const visitor = await Visitor.findByIdAndUpdate(
-            req.params.id,
-            { status: 'Approved', approvedBy: req.user._id, approvedAt: new Date() },
-            { new: true, runValidators: true }
-        );
-        if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-
-        // Notify Watchman/Security
-        try {
-            const watchmen = await User.find({ role: { $in: ['Watchman', 'Security'] } }).select('_id');
-            for (const w of watchmen) {
-                await Notification.create({
-                    user: w._id,
-                    title: '✅ Visitor Approved — Allow Entry',
-                    message: `Visitor "${visitor.visitorName}" (${visitor.visitorContactNumber}) has been approved. Please allow access and capture In-Time.`,
-                    type: 'Alert',
-                });
-            }
-        } catch (e) { console.error('Watchman notify error:', e.message); }
-
-        res.status(200).json({ success: true, data: visitor });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-};
-
-// ── Reject Visitor ────────────────────────────────────────────────────────────
-exports.rejectVisitor = async (req, res) => {
-    try {
-        const visitor = await Visitor.findByIdAndUpdate(
-            req.params.id,
-            { status: 'Rejected', rejectionReason: req.body.reason || 'Rejected by admin' },
-            { new: true, runValidators: true }
-        );
-        if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-        res.status(200).json({ success: true, data: visitor });
-    } catch (err) {
-        res.status(500).json({ success: false, message: err.message });
-    }
-};
-
 // ── Check-In (Watchman) ───────────────────────────────────────────────────────
 exports.checkInVisitor = async (req, res) => {
     try {
         const visitor = await Visitor.findById(req.params.id);
         if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-        if (visitor.status !== 'Approved')
-            return res.status(400).json({ success: false, message: 'Visitor must be approved before check-in' });
+        if (visitor.status !== 'Pending')
+            return res.status(400).json({ success: false, message: 'Visitor is not pending check-in (already checked in or checked out)' });
 
         visitor.status = 'Checked-In';
         visitor.inTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
         await visitor.save();
+
+        // ── Fire check-in notification ────────────────────────────────────────
+        try {
+            let recipientIds = [];
+            const approvalLevel = visitor.approvalLevel;
+            const unitId = visitor.unit;
+            const floorId = visitor.floor;
+            const propertyId = visitor.property;
+
+            if (approvalLevel === 'Office Level' && unitId) {
+                const unit = await Unit.findById(unitId).populate('owner');
+                if (unit?.owner?.user) recipientIds = [unit.owner.user];
+            } else if (approvalLevel === 'Floor Level' && floorId) {
+                const floor = await Floor.findById(floorId);
+                if (floor?.assignedAdmin) recipientIds = [floor.assignedAdmin];
+                else if (floor?.assignedOwner) {
+                    const owner = await require('../models/Owner').findById(floor.assignedOwner);
+                    if (owner?.user) recipientIds = [owner.user];
+                }
+            } else if (approvalLevel === 'Property Level' && propertyId) {
+                const property = await Property.findById(propertyId);
+                if (property?.createdBy) recipientIds = [property.createdBy];
+            }
+
+            if (!recipientIds.length) {
+                const admins = await User.find({ role: 'SUPER_ADMIN' }).select('_id');
+                recipientIds = admins.map(a => a._id);
+            }
+
+            const checkInMsg = `Visitor "${visitor.visitorName}" has checked in to meet "${visitor.personToMeet || '—'}".`;
+
+            for (const uid of recipientIds) {
+                await Notification.create({
+                    user: uid,
+                    title: 'Visitor Checked In',
+                    message: checkInMsg,
+                    type: 'Alert',
+                });
+            }
+        } catch (notifErr) {
+            console.error('Check-in notification error:', notifErr.message);
+        }
+
         res.status(200).json({ success: true, data: visitor });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
@@ -250,13 +303,18 @@ exports.checkOutVisitor = async (req, res) => {
     try {
         const visitor = await Visitor.findById(req.params.id);
         if (!visitor) return res.status(404).json({ success: false, message: 'Visitor not found' });
-        if (visitor.status !== 'Checked-In')
-            return res.status(400).json({ success: false, message: 'Visitor is not currently checked in' });
+        if (visitor.status === 'Checked-Out')
+            return res.status(400).json({ success: false, message: 'Visitor is already checked out' });
 
         visitor.status  = 'Checked-Out';
         visitor.outTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        visitor.outDate = new Date().toISOString().split('T')[0];
+        if (req.user) {
+            visitor.approvedBy = req.user._id;
+        }
         await visitor.save();
-        res.status(200).json({ success: true, data: visitor });
+        const populated = await Visitor.findById(visitor._id).populate(POPULATE);
+        res.status(200).json({ success: true, data: populated });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
@@ -299,16 +357,24 @@ exports.getVisitorStats = async (req, res) => {
             }
         }
 
-        const [total, todayCount, pending, approved, checkedIn, checkedOut, rejected] = await Promise.all([
+        const [total, todayCount, checkedIn, checkedOut] = await Promise.all([
             Visitor.countDocuments(query),
             Visitor.countDocuments({ ...query, visitDate: today }),
-            Visitor.countDocuments({ ...query, status: 'Pending' }),
-            Visitor.countDocuments({ ...query, status: 'Approved' }),
             Visitor.countDocuments({ ...query, status: 'Checked-In' }),
             Visitor.countDocuments({ ...query, status: 'Checked-Out', visitDate: today }),
-            Visitor.countDocuments({ ...query, status: 'Rejected' }),
         ]);
-        res.status(200).json({ success: true, data: { total, todayCount, pending, approved, checkedIn, checkedOut, rejected } });
+        res.status(200).json({ 
+            success: true, 
+            data: { 
+                total, 
+                todayCount, 
+                pending: 0, 
+                approved: 0, 
+                checkedIn, 
+                checkedOut, 
+                rejected: 0 
+            } 
+        });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }

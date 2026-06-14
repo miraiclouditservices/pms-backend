@@ -4,8 +4,8 @@ const {
     getMaterial,
     createMaterial,
     updateMaterial,
-    deleteMaterial,
-    approveGatePass
+    approveGatePass,
+    checkOutMaterial
 } = require('../controllers/materials');
 
 const router = express.Router();
@@ -21,12 +21,16 @@ router
 router
     .route('/:id')
     .get(getMaterial)
-    .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateMaterial)
-    .delete(authorize('SUPER_ADMIN'), deleteMaterial);
+    .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateMaterial);
 
 // Approve / Reject gate pass
 router
     .route('/:id/approve')
     .patch(authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'FLOOR_ADMIN', 'OFFICE_OWNER'), approveGatePass);
+
+// Check-out / Clear gate pass
+router
+    .route('/:id/check-out')
+    .patch(authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'Watchman', 'Security'), checkOutMaterial);
 
 module.exports = router;

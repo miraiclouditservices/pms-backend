@@ -3,8 +3,11 @@ const mongoose = require('mongoose');
 const paymentSchema = new mongoose.Schema({
     lease: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Lease',
-        required: [true, 'Payment must belong to a lease']
+        ref: 'Lease'
+    },
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User'
     },
     month: {
         type: String,
@@ -41,7 +44,22 @@ const paymentSchema = new mongoose.Schema({
     }
 });
 
-// Prevent duplicate payments for the same month/year/lease
-paymentSchema.index({ lease: 1, month: 1, year: 1 }, { unique: true });
+// Unique payment per month/year/lease (only if lease is not null)
+paymentSchema.index(
+    { lease: 1, month: 1, year: 1 },
+    { 
+        unique: true, 
+        partialFilterExpression: { lease: { $exists: true, $ne: null } } 
+    }
+);
+
+// Unique payment per month/year/user (only if user is not null)
+paymentSchema.index(
+    { user: 1, month: 1, year: 1 },
+    { 
+        unique: true, 
+        partialFilterExpression: { user: { $exists: true, $ne: null } } 
+    }
+);
 
 module.exports = mongoose.model('Payment', paymentSchema);

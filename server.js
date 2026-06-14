@@ -56,6 +56,7 @@ app.use('/api/bookings', require('./routes/bookings'));
 app.use('/api/meeting-rooms', require('./routes/meetingRooms'));
 app.use('/api/floor-assignments', require('./routes/floorAssignments'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/agreements', require('./routes/agreements'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 

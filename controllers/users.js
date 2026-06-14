@@ -7,34 +7,98 @@ exports.getUsers = async (req, res, next) => {
     try {
         let query = {};
         if (req.user) {
-            if (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner') {
-                query._id = req.user._id;
-            } else if (req.user.role === 'STAFF_ADMIN') {
-                query._id = req.user._id;
+            if (req.user.role === 'SUPER_ADMIN') {
+                // Super admin sees all users
+                query = {};
             } else if (req.user.role === 'FLOOR_ADMIN') {
-                const Floor = require('../models/Floor');
-                const Unit = require('../models/Unit');
-                const floors = await Floor.find({ assignedAdmin: req.user._id });
-                const fIds = floors.map(f => f._id);
-                const propertyIds = floors.map(f => f.property).filter(Boolean);
-                const units = await Unit.find({ floor: { $in: fIds } }).select('_id');
-                const unitIds = units.map(u => u._id);
-
+                // Floor admin sees only users they created or themselves
                 query = {
                     $or: [
-                        { _id: req.user._id },
-                        { assignedFloors: { $in: fIds } },
-                        { assignedUnits: { $in: unitIds } },
-                        { assignedProperties: { $in: propertyIds } }
+                        { createdBy: req.user._id },
+                        { _id: req.user._id }
                     ]
                 };
+            } else {
+                query._id = req.user._id;
             }
         }
-        const users = await User.find(query);
-        res.status(200).json({
-            success: true,
-            data: users
-        });
+
+        // 1. Role filter
+        if (req.query.role && req.query.role !== 'All Roles') {
+            if (req.query.role.includes(',')) {
+                query.role = { $in: req.query.role.split(',') };
+            } else {
+                query.role = req.query.role;
+            }
+        }
+
+        // 2. Agreement Status filter
+        if (req.query.agreementStatus && req.query.agreementStatus !== 'All') {
+            query.agreementStatus = req.query.agreementStatus;
+        }
+
+        // 3. Staff Category filter
+        if (req.query.staffCategory && req.query.staffCategory !== 'All') {
+            query.staffCategory = req.query.staffCategory;
+        }
+
+        // 3b. Payment Status filter
+        if (req.query.paymentStatus && req.query.paymentStatus !== 'All') {
+            query.paymentStatus = req.query.paymentStatus;
+        }
+
+        // 4. Search functionality
+        if (req.query.search && req.query.search.trim() !== '') {
+            const searchRegex = new RegExp(req.query.search.trim(), 'i');
+            const searchQueryObj = {
+                $or: [
+                    { name: searchRegex },
+                    { email: searchRegex },
+                    { phoneNumber: searchRegex },
+                    { address: searchRegex },
+                    { staffCategory: searchRegex },
+                    { role: searchRegex }
+                ]
+            };
+            if (query.$or) {
+                query = { $and: [ { $or: query.$or }, searchQueryObj ] };
+            } else {
+                Object.assign(query, searchQueryObj);
+            }
+        }
+
+        // 5. Pagination
+        const page = parseInt(req.query.page, 10) || 1;
+        const limit = parseInt(req.query.limit, 10) || 0;
+
+        let total = 0;
+        let users;
+
+        if (limit > 0) {
+            const startIndex = (page - 1) * limit;
+            total = await User.countDocuments(query);
+            users = await User.find(query)
+                .sort({ createdAt: -1 })
+                .skip(startIndex)
+                .limit(limit);
+
+            res.status(200).json({
+                success: true,
+                data: users,
+                pagination: {
+                    total,
+                    page,
+                    limit,
+                    pages: Math.ceil(total / limit)
+                }
+            });
+        } else {
+            users = await User.find(query).sort({ createdAt: -1 });
+            res.status(200).json({
+                success: true,
+                data: users
+            });
+        }
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }
@@ -80,21 +144,7 @@ exports.createUser = async (req, res, next) => {
             return res.status(403).json({ success: false, error: 'Authorization Error: You do not have permission to create a user with this role.' });
         }
 
-        // PRE-VALIDATION: Check if any assigned floor is already taken (only for FLOOR_ADMINs)
-        if (req.body.role === 'FLOOR_ADMIN' && req.body.assignedFloors && req.body.assignedFloors.length > 0) {
-            const Floor = require('../models/Floor');
-            const takenFloors = await Floor.find({
-                _id: { $in: req.body.assignedFloors },
-                assignedAdmin: { $exists: true, $ne: null }
-            });
 
-            if (takenFloors.length > 0) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Validation Error: One or more selected floors are already assigned to another FLOOR_ADMIN.`
-                });
-            }
-        }
 
         // PRE-VALIDATION: Prevent FLOOR_ADMINs from assigning properties/floors/units outside their management
         if (req.user && req.user.role === 'FLOOR_ADMIN') {
@@ -125,6 +175,9 @@ exports.createUser = async (req, res, next) => {
             }
         }
 
+        if (req.user) {
+            req.body.createdBy = req.user._id;
+        }
         const user = await User.create(req.body);
 
         // Create welcome/assignment notification for the provisioned user
@@ -216,6 +269,14 @@ exports.updateUser = async (req, res, next) => {
         let user = await User.findById(req.params.id);
         if (!user) {
             return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        if (req.user) {
+            const isSelf = user._id.toString() === req.user._id.toString();
+            const isCreatedByMe = user.createdBy && user.createdBy.toString() === req.user._id.toString();
+            if (!isSelf && !isCreatedByMe && req.user.role !== 'SUPER_ADMIN') {
+                return res.status(403).json({ success: false, error: 'Authorization Error: You are not authorized to update this user.' });
+            }
         }
 
         // Check hierarchy if role is being updated
@@ -343,6 +404,13 @@ exports.deleteUser = async (req, res, next) => {
         }
 
         // Authorization check for deletion
+        if (req.user) {
+            const isCreatedByMe = user.createdBy && user.createdBy.toString() === req.user._id.toString();
+            if (!isCreatedByMe && req.user.role !== 'SUPER_ADMIN') {
+                return res.status(403).json({ success: false, error: 'Authorization Error: You are not authorized to delete this user.' });
+            }
+        }
+
         if (req.user && user.role) {
             if (req.user.role !== 'SUPER_ADMIN' && !checkHierarchy(req.user.role, user.role)) {
                 return res.status(403).json({ success: false, error: 'Authorization Error: You do not have permission to delete this user.' });

@@ -45,6 +45,14 @@ exports.getAsset = factory.getOne(Asset, { path: 'property unit createdBy', sele
 exports.createAsset = async (req, res, next) => {
     try {
         if (req.user) req.body.createdBy = req.user.id;
+        
+        // Sanitize empty string ObjectId references to null
+        ['property', 'unit', 'vendor', 'createdBy'].forEach(field => {
+            if (req.body[field] === '') {
+                req.body[field] = null;
+            }
+        });
+
         const data = await Asset.create(req.body);
 
         // Fetch property details to compose the message
@@ -73,6 +81,13 @@ exports.updateAsset = async (req, res, next) => {
         if (!originalAsset) {
             return res.status(404).json({ success: false, error: 'Resource not found' });
         }
+
+        // Sanitize empty string ObjectId references to null
+        ['property', 'unit', 'vendor', 'createdBy'].forEach(field => {
+            if (req.body[field] === '') {
+                req.body[field] = null;
+            }
+        });
 
         const data = await Asset.findByIdAndUpdate(req.params.id, req.body, {
             new: true,

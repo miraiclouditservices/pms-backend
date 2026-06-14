@@ -1,7 +1,7 @@
 const express = require('express');
 const {
     getVisitors, getVisitor, createVisitor, updateVisitor, deleteVisitor,
-    approveVisitor, rejectVisitor, checkInVisitor, checkOutVisitor, getVisitorStats,
+    checkInVisitor, checkOutVisitor, getVisitorStats,
 } = require('../controllers/visitors');
 
 const router = express.Router();
@@ -24,16 +24,6 @@ router.route('/:id')
     .get(getVisitor)
     .put(authorize('SUPER_ADMIN', 'STAFF_ADMIN'), updateVisitor)
     .delete(authorize('SUPER_ADMIN'), deleteVisitor);
-
-// ── Approval Flow ─────────────────────────────────────────────────────────────
-router.patch('/:id/approve',
-    authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'OFFICE_OWNER', 'FLOOR_ADMIN'),
-    approveVisitor
-);
-router.patch('/:id/reject',
-    authorize('SUPER_ADMIN', 'STAFF_ADMIN', 'OFFICE_OWNER', 'FLOOR_ADMIN'),
-    rejectVisitor
-);
 
 // ── Security/Watchman Gate Actions ────────────────────────────────────────────
 router.patch('/:id/check-in',

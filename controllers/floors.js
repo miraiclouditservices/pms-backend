@@ -43,6 +43,10 @@ exports.getFloors = async (req, res, next) => {
             query.property = req.query.property;
         }
 
+        if (req.query.search) {
+            query.floorName = { $regex: req.query.search, $options: 'i' };
+        }
+
         // Pagination parameters
         const page = parseInt(req.query.page, 10) || 1;
         const limit = parseInt(req.query.limit, 10) || 10;

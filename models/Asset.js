@@ -11,8 +11,49 @@ const AssetSchema = new mongoose.Schema({
     },
     category: {
         type: String,
-        enum: ['HVAC', 'Electrical', 'Plumbing', 'IT & Tech', 'Security', 'Furniture', 'Others'],
-        default: 'Others'
+        enum: [
+            'HVAC Systems',
+            'Electrical Systems',
+            'Power Backup Systems',
+            'Security Systems',
+            'Fire & Safety Equipment',
+            'Plumbing & Water Systems',
+            'Elevator & Escalator Systems',
+            'Building Infrastructure',
+            'Furniture & Fixtures',
+            'IT & Networking Equipment',
+            'CCTV & Surveillance',
+            'Access Control Systems',
+            'Kitchen Equipment',
+            'Laundry Equipment',
+            'Cleaning Equipment',
+            'Gardening & Landscaping',
+            'Energy Management Systems',
+            'Solar & Renewable Energy',
+            'Generator & UPS',
+            'Transformer & Electrical Panels',
+            'Lighting Systems',
+            'Parking & Vehicle Equipment',
+            'EV Charging Systems',
+            'Office Equipment',
+            'Communication Equipment',
+            'Medical & Emergency Equipment',
+            'Safety Equipment',
+            'Water Treatment Systems',
+            'Waste Management Equipment',
+            'Swimming Pool Equipment',
+            'Gym & Fitness Equipment',
+            'Recreation Equipment',
+            'Construction Equipment',
+            'Tools & Machinery',
+            'Kitchen Appliances',
+            'Home Appliances',
+            'Tenant Provided Assets',
+            'Rental Assets',
+            'Lease Assets',
+            'Miscellaneous / Others'
+        ],
+        default: 'Miscellaneous / Others'
     },
     property: {
         type: mongoose.Schema.ObjectId,
@@ -74,11 +115,9 @@ const AssetSchema = new mongoose.Schema({
     createdBy: {
         type: mongoose.Schema.ObjectId,
         ref: 'User'
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
     }
+}, {
+    timestamps: true
 });
 
 // Auto-generate asset code if not provided

@@ -72,12 +72,15 @@ const VisitorSchema = new mongoose.Schema(
     outTime: {
       type: String,
     },
+    outDate: {
+      type: String, // "YYYY-MM-DD"
+    },
 
-    // ── Approval Flow ─────────────────────────────────────────────────────────
+    // ── Visit Status ─────────────────────────────────────────────────────────
     status: {
       type: String,
-      enum: ['Pending', 'Approved', 'Rejected', 'Checked-In', 'Checked-Out'],
-      default: 'Pending',
+      enum: ['Checked-In', 'Checked-Out'],
+      default: 'Checked-In',
     },
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,

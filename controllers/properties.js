@@ -8,63 +8,87 @@ const mongoose = require('mongoose');
 // @access  Private
 exports.getProperties = async (req, res, next) => {
     try {
-        let query;
-        
-        // Data isolation based on Floor Assignments
+        const { search, status, type, page = 1, limit = 10 } = req.query;
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        // Build text search filter
+        const searchFilter = search
+            ? {
+                $or: [
+                    { propertyName: { $regex: search, $options: 'i' } },
+                    { propertyAddress: { $regex: search, $options: 'i' } },
+                    { propertyType: { $regex: search, $options: 'i' } },
+                    { location: { $regex: search, $options: 'i' } },
+                ]
+            }
+            : {};
+
+        if (status && status !== 'All') searchFilter.status = status;
+        if (type && type !== 'All') searchFilter.propertyType = { $regex: type, $options: 'i' };
+
+        let baseFilter = {};
+
+        // Role-based property isolation
         if (req.user && (req.user.role === 'OFFICE_OWNER' || req.user.role === 'Owner')) {
             const owner = await Owner.findOne({ user: req.user._id });
             if (owner) {
                 const assignedFloors = await mongoose.model('Floor').find({ assignedOwner: owner._id });
                 if (assignedFloors.length > 0) {
                     const propertyIds = [...new Set(assignedFloors.map(f => f.property.toString()))];
-                    query = Property.find({ _id: { $in: propertyIds } });
+                    baseFilter = { _id: { $in: propertyIds } };
                 } else {
-                    return res.status(200).json({ success: true, count: 0, data: [] });
+                    return res.status(200).json({ success: true, count: 0, data: [], pagination: { total: 0, page: 1, pages: 1 } });
                 }
             } else {
-                return res.status(200).json({ success: true, count: 0, data: [] });
+                return res.status(200).json({ success: true, count: 0, data: [], pagination: { total: 0, page: 1, pages: 1 } });
             }
         } else if (req.user && req.user.role === 'FLOOR_ADMIN') {
             const assignedFloors = await mongoose.model('Floor').find({ assignedAdmin: req.user._id });
             if (assignedFloors.length > 0) {
                 const propertyIds = [...new Set(assignedFloors.map(f => f.property.toString()))];
-                query = Property.find({ _id: { $in: propertyIds } });
+                baseFilter = { _id: { $in: propertyIds } };
             } else {
-                return res.status(200).json({ success: true, count: 0, data: [] });
+                return res.status(200).json({ success: true, count: 0, data: [], pagination: { total: 0, page: 1, pages: 1 } });
             }
         } else if (req.user && req.user.role === 'STAFF_ADMIN') {
             const assignedProps = req.user.assignedProperties || [];
             const assignedFloors = req.user.assignedFloors || [];
-            const propertyIds = [];
-            if (assignedProps.length > 0) {
-                propertyIds.push(...assignedProps.map(p => p.toString()));
-            }
+            const propertyIds = [...assignedProps.map(p => p.toString())];
             if (assignedFloors.length > 0) {
                 const floors = await mongoose.model('Floor').find({ _id: { $in: assignedFloors } });
-                const floorPropIds = floors.map(f => f.property.toString());
-                propertyIds.push(...floorPropIds);
+                propertyIds.push(...floors.map(f => f.property.toString()));
             }
             const uniqueIds = [...new Set(propertyIds)];
             if (uniqueIds.length > 0) {
-                query = Property.find({ _id: { $in: uniqueIds } });
+                baseFilter = { _id: { $in: uniqueIds } };
             } else {
-                return res.status(200).json({ success: true, count: 0, data: [] });
+                return res.status(200).json({ success: true, count: 0, data: [], pagination: { total: 0, page: 1, pages: 1 } });
             }
-        } else {
-            query = Property.find();
         }
 
-        const properties = await query.populate('createdBy', 'name');
+        const finalFilter = { ...baseFilter, ...searchFilter };
+        const total = await Property.countDocuments(finalFilter);
+        const properties = await Property.find(finalFilter)
+            .populate('createdBy', 'name')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit));
 
         res.status(200).json({
             success: true,
             count: properties.length,
-            data: properties
+            data: properties,
+            pagination: {
+                total,
+                page: parseInt(page),
+                pages: Math.ceil(total / parseInt(limit)),
+            }
         });
     } catch (err) {
         res.status(400).json({ success: false, error: err.message });
     }
 };
+
 
 // @desc    Get single property
 // @route   GET /api/properties/:id
